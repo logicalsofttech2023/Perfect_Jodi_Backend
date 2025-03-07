@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
   {
-    photos: [{ type: String }],
+    photos: [{ type: String, require: true }],
     profileFor: {
       type: String,
       enum: [

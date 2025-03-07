@@ -149,7 +149,7 @@ export const completeRegistration = async (req, res) => {
       profileFor,
     } = req.body;
 
-    const photos = req.file ? req.file.path.split(path.sep).join("/") : "";
+    const photos = req.files ? req.files.map(file => file.path.split(path.sep).join("/")) : [];
 
     let user = await User.findOne({ mobileNumber });
     if (!user || !user.isVerified) {
@@ -163,7 +163,7 @@ export const completeRegistration = async (req, res) => {
       });
     }
 
-    // Hash the password before saving
+    // Hash the password before savin
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
