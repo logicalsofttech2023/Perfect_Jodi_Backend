@@ -117,7 +117,7 @@ export const resendOtp = async (req, res) => {
   }
 };
 
-export const completeRegistration = async (req, res) => {
+export const completeRegistration = async (req, res) => {  
   try {
     const {
       email,
@@ -149,12 +149,23 @@ export const completeRegistration = async (req, res) => {
       profileFor,
     } = req.body;
 
-    const photos = req.files ? req.files.map(file => file.path.split(path.sep).join("/")) : [];
+    const photos = req.files ? req.files.map(file => file.path.split(path.sep).join("/")) : [];    
 
     let user = await User.findOne({ mobileNumber });
     if (!user || !user.isVerified) {
       return res.status(400).json({ message: "User not verified", status: false });
     }
+    
+    if (user.email) {
+      return res.status(400).json({ message: "User already register", status: false });
+    }
+
+    // Check if another user exists with the same email
+    let existingUser = await User.findOne({ email });
+    if (existingUser && existingUser._id.toString() !== user._id.toString()) {
+      return res.status(400).json({ message: "Email is already in use", status: false });
+    }
+
 
     if (!firstName || !lastName || !password || !email || !mobileNumber || !profileFor) {
       return res.status(400).json({
@@ -163,11 +174,11 @@ export const completeRegistration = async (req, res) => {
       });
     }
 
-    // Hash the password before savin
+    // Hash the password before saving
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // Update user fields
+    // Update user field
     Object.assign(user, {
       profileFor,
       age,
@@ -196,7 +207,6 @@ export const completeRegistration = async (req, res) => {
       noOfBrothers,
       photos: photos || user.photos,
       password: hashedPassword,
-      isVerified: false,
     });
 
     await user.save();
