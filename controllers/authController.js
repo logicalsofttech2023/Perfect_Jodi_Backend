@@ -225,8 +225,8 @@ export const login = async (req, res) => {
   try {
     const { mobileOrEmail, password } = req.body;
 
-    if (!mobileOrEmail || !password) {
-      return res.status(400).json({ message: "Mobile/Email and Password are required", status: false });
+    if (!mobileOrEmail) {
+      return res.status(400).json({ message: "Mobile/Email are required", status: false });
     }
 
     // Find user by email or mobile number
@@ -238,10 +238,12 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "User not found", status: false });
     }
 
-    // Compare hashed password
-    const isPasswordMatch = await bcrypt.compare(password, user.password);
-    if (!isPasswordMatch) {
-      return res.status(400).json({ message: "Invalid credentials", status: false });
+    if (password) {
+      // Compare hashed password if password is provided
+      const isPasswordMatch = await bcrypt.compare(password, user.password);
+      if (!isPasswordMatch) {
+        return res.status(400).json({ message: "Invalid credentials", status: false });
+      }
     }
 
     // Generate JWT token
@@ -250,15 +252,8 @@ export const login = async (req, res) => {
     res.status(200).json({
       message: "Login successful",
       status: true,
-      data: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        mobileNumber: user.mobileNumber,
-        role: user.role,
-        token,
-      },
+      data: user,
+      token: token,
     });
   } catch (error) {
     console.error("Error in login:", error);
@@ -266,7 +261,8 @@ export const login = async (req, res) => {
   }
 };
 
-export const updateProfile = async (req, res) => {
+
+export const updateProfile = async (req, res) => {                                                                       
   try {
     const userId = req.user.id;
     const { name, email, dob, gender, maritalStatus } = req.body;
