@@ -55,7 +55,7 @@ const userSchema = new mongoose.Schema(
     noOfBrothers: { type: Number, default: 0 },
     mobileNumber: { type: String, unique: true },
     countryCode: { type: String },
-    email: { type: String, unique: true, },
+    email: { type: String },
     password: { type: String },
     otp: { type: String },
     otpExpiresAt: { type: Date },

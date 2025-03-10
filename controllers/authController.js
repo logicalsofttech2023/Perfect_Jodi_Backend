@@ -10,7 +10,7 @@ const generateJwtToken = (user) => {
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
-};;
+};
 
 const generateFourDigitOtp = () => {
   return Math.floor(1000 + Math.random() * 9000).toString(); // Generates a random 4-digit number
@@ -92,32 +92,44 @@ export const verifyOtp = async (req, res) => {
 export const resendOtp = async (req, res) => {
   try {
     const { mobileNumber, countryCode } = req.body;
+
     if (!mobileNumber || !countryCode) {
       return res.status(400).json({
-        message: "mobileNumber number and country code are required",
+        message: "Mobile number and country code are required",
         status: false,
       });
     }
-
     let user = await User.findOne({ mobileNumber, countryCode });
+
     if (!user) {
       return res.status(400).json({ message: "User not found", status: false });
     }
 
+    if (typeof generateFourDigitOtp !== "function") {
+      console.error("generateFourDigitOtp function is not defined!");
+      return res.status(500).json({ message: "OTP generation error", status: false });
+    }
+
     const generatedOtp = generateFourDigitOtp();
+
     user.otp = generatedOtp;
     user.otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
     await user.save();
 
-    res
-      .status(200)
-      .json({ message: "OTP resent successfully", status: true, data: user });
+    res.status(200).json({
+      message: "OTP resent successfully",
+      status: true,
+      data:user,
+    });
+
   } catch (error) {
-    res.status(500).json({ message: "Server Error", status: false });
+    console.error("Error in resendOtp:", error);
+    res.status(500).json({ message: "Server Error", status: false, error: error.message });
   }
 };
 
-export const completeRegistration = async (req, res) => {  
+export const completeRegistration = async (req, res) => {
   try {
     const {
       email,
@@ -149,27 +161,42 @@ export const completeRegistration = async (req, res) => {
       profileFor,
     } = req.body;
 
-    const photos = req.files ? req.files.map(file => file.path.split(path.sep).join("/")) : [];    
+    const photos = req.files
+      ? req.files.map((file) => file.path.split(path.sep).join("/"))
+      : [];
 
     let user = await User.findOne({ mobileNumber });
     if (!user || !user.isVerified) {
-      return res.status(400).json({ message: "User not verified", status: false });
+      return res
+        .status(400)
+        .json({ message: "User not verified", status: false });
     }
-    
+
     if (user.email) {
-      return res.status(400).json({ message: "User already register", status: false });
+      return res
+        .status(400)
+        .json({ message: "User already register", status: false });
     }
 
     // Check if another user exists with the same email
     let existingUser = await User.findOne({ email });
     if (existingUser && existingUser._id.toString() !== user._id.toString()) {
-      return res.status(400).json({ message: "Email is already in use", status: false });
+      return res
+        .status(400)
+        .json({ message: "Email is already in use", status: false });
     }
 
-
-    if (!firstName || !lastName || !password || !email || !mobileNumber || !profileFor) {
+    if (
+      !firstName ||
+      !lastName ||
+      !password ||
+      !email ||
+      !mobileNumber ||
+      !profileFor
+    ) {
       return res.status(400).json({
-        message: "firstName, lastName, profileFor, email and password are required",
+        message:
+          "firstName, lastName, profileFor, email and password are required",
         status: false,
       });
     }
@@ -226,7 +253,9 @@ export const login = async (req, res) => {
     const { mobileOrEmail, password } = req.body;
 
     if (!mobileOrEmail) {
-      return res.status(400).json({ message: "Mobile/Email are required", status: false });
+      return res
+        .status(400)
+        .json({ message: "Mobile/Email are required", status: false });
     }
 
     // Find user by email or mobile number
@@ -242,7 +271,9 @@ export const login = async (req, res) => {
       // Compare hashed password if password is provided
       const isPasswordMatch = await bcrypt.compare(password, user.password);
       if (!isPasswordMatch) {
-        return res.status(400).json({ message: "Invalid credentials", status: false });
+        return res
+          .status(400)
+          .json({ message: "Invalid credentials", status: false });
       }
     }
 
@@ -261,11 +292,37 @@ export const login = async (req, res) => {
   }
 };
 
-
-export const updateProfile = async (req, res) => {                                                                       
+export const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, email, dob, gender, maritalStatus } = req.body;
+    const {
+      email,
+      age,
+      firstName,
+      lastName,
+      dob,
+      gender,
+      religion,
+      height,
+      weight,
+      address,
+      city,
+      state,
+      pincode,
+      maritalStatus,
+      highestQualification,
+      yourWork,
+      annualIncome,
+      bio,
+      fatherName,
+      fatherOccupation,
+      motherName,
+      noOfSisters,
+      noOfBrothers,
+      mobileNumber,
+      countryCode,
+      profileFor,
+    } = req.body;
 
     // Fixing profile image path
     const profileImage = req.file
@@ -278,11 +335,32 @@ export const updateProfile = async (req, res) => {
     }
 
     // Update fields
-    if (name) user.name = name;
     if (email) user.email = email;
+    if (age) user.age = age;
+    if (firstName) user.firstName = firstName;
+    if (lastName) user.lastName = lastName;
     if (dob) user.dob = dob;
     if (gender) user.gender = gender;
+    if (religion) user.religion = religion;
+    if (height) user.height = height;
+    if (weight) user.weight = weight;
+    if (address) user.address = address;
+    if (city) user.city = city;
+    if (state) user.state = state;
+    if (pincode) user.pincode = pincode;
     if (maritalStatus) user.maritalStatus = maritalStatus;
+    if (highestQualification) user.highestQualification = highestQualification;
+    if (yourWork) user.yourWork = yourWork;
+    if (annualIncome) user.annualIncome = annualIncome;
+    if (bio) user.bio = bio;
+    if (fatherName) user.fatherName = fatherName;
+    if (fatherOccupation) user.fatherOccupation = fatherOccupation;
+    if (motherName) user.motherName = motherName;
+    if (noOfSisters) user.noOfSisters = noOfSisters;
+    if (noOfBrothers) user.noOfBrothers = noOfBrothers;
+    if (mobileNumber) user.mobileNumber = mobileNumber;
+    if (countryCode) user.countryCode = countryCode;
+    if (profileFor) user.profileFor = profileFor;
     if (profileImage) user.profileImage = profileImage;
 
     await user.save();
@@ -311,3 +389,167 @@ export const getUserById = async (req, res) => {
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
+
+export const generateForgotPasswordOtp = async (req, res) => {
+  try {
+    const { email, mobileNumber } = req.body;
+
+    if (!email && !mobileNumber) {
+      return res.status(400).json({
+        message: "Email ya mobile number are required",
+        status: false,
+      });
+    }
+
+    let user;
+    if (email) {
+      user = await User.findOne({ email });
+    } else {
+      user = await User.findOne({ mobileNumber });
+    }
+    
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not Found",
+        status: false,
+      });
+    }
+
+    const generatedOtp = generateFourDigitOtp();
+    const otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    user.otp = generatedOtp;
+    user.otpExpiresAt = otpExpiresAt;
+    await user.save();
+
+    res.status(200).json({
+      message: "OTP generated successfully",
+      status: true,
+      data: { method: email ? "email" : "mobile", otp: generatedOtp }, // Testing ke liye OTP bhej raha hoon
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const verifyForgotPasswordOtp = async (req, res) => {
+  try {
+    const { email, mobileNumber, otp } = req.body;
+
+    if (!email && !mobileNumber) {
+      return res.status(400).json({
+        message: "Email ya mobile number required",
+        status: false,
+      });
+    }
+
+    if (!otp) {
+      return res.status(400).json({
+        message: "OTP is required",
+        status: false,
+      });
+    }
+
+    let user;
+    if (email) {
+      user = await User.findOne({ email });
+    } else {
+      user = await User.findOne({ mobileNumber });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+        status: false,
+      });
+    }
+
+    if (user.otp !== otp) {
+      return res.status(400).json({
+        message: "Invalid OTP",
+        status: false,
+      });
+    }
+
+    if (!user.otpExpiresAt || new Date() > new Date(user.otpExpiresAt)) {
+      return res.status(400).json({
+        message: "OTP expired",
+        status: false,
+      });
+    }
+
+    // OTP verify hone ke baad usko null set karo taake dubara use na ho
+    user.otp = null;
+    user.otpExpiresAt = null;
+    await user.save();
+
+    res.status(200).json({
+      message: "OTP verified successfully",
+      status: true,
+      data: user,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const updatePassword = async (req, res) => {
+  try {
+    const { email, mobileNumber, newPassword, confirmPassword } = req.body;
+
+    if (!email && !mobileNumber) {
+      return res.status(400).json({
+        message: "Email ya mobile number required",
+        status: false,
+      });
+    }
+
+    if (!newPassword || !confirmPassword) {
+      return res.status(400).json({
+        message: "New password and confirm password are required",
+        status: false,
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        message: "Passwords do not match",
+        status: false,
+      });
+    }
+
+    let user;
+    if (email) {
+      user = await User.findOne({ email });
+    } else {
+      user = await User.findOne({ mobileNumber });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+        status: false,
+      });
+    }
+
+    // Hash the new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update the password
+    user.password = hashedPassword;
+    await user.save();
+
+    res.status(200).json({
+      message: "Password updated successfully",
+      status: true,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
