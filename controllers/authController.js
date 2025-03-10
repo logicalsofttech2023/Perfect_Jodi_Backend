@@ -389,21 +389,19 @@ export const getUserById = async (req, res) => {
 
 export const generateForgotPasswordOtp = async (req, res) => {
   try {
-    const { email, mobileNumber } = req.body;
+    const { mobileOrEmail } = req.body;
 
-    if (!email && !mobileNumber) {
-      return res.status(400).json({
-        message: "Email ya mobile number are required",
-        status: false,
-      });
+    if (!mobileOrEmail) {
+      return res
+        .status(400)
+        .json({ message: "Mobile/Email are required", status: false });
     }
 
-    let user;
-    if (email) {
-      user = await User.findOne({ email });
-    } else {
-      user = await User.findOne({ mobileNumber });
-    }
+    // Find user by email or mobile number
+    let user = await User.findOne({
+      $or: [{ email: mobileOrEmail }, { mobileNumber: mobileOrEmail }],
+    });
+   
 
     if (!user) {
       return res.status(404).json({
@@ -422,7 +420,7 @@ export const generateForgotPasswordOtp = async (req, res) => {
     res.status(200).json({
       message: "OTP generated successfully",
       status: true,
-      data: { method: email ? "email" : "mobile", otp: generatedOtp }, // Testing ke liye OTP bhej raha hoon
+      otp: generatedOtp,
     });
   } catch (error) {
     console.log(error);
@@ -432,13 +430,12 @@ export const generateForgotPasswordOtp = async (req, res) => {
 
 export const verifyForgotPasswordOtp = async (req, res) => {
   try {
-    const { email, mobileNumber, otp } = req.body;
+    const { mobileOrEmail, otp } = req.body;
 
-    if (!email && !mobileNumber) {
-      return res.status(400).json({
-        message: "Email ya mobile number required",
-        status: false,
-      });
+    if (!mobileOrEmail) {
+      return res
+        .status(400)
+        .json({ message: "Mobile/Email are required", status: false });
     }
 
     if (!otp) {
@@ -448,12 +445,11 @@ export const verifyForgotPasswordOtp = async (req, res) => {
       });
     }
 
-    let user;
-    if (email) {
-      user = await User.findOne({ email });
-    } else {
-      user = await User.findOne({ mobileNumber });
-    }
+    // Find user by email or mobile number
+    let user = await User.findOne({
+      $or: [{ email: mobileOrEmail }, { mobileNumber: mobileOrEmail }],
+    });
+   
 
     if (!user) {
       return res.status(404).json({
@@ -494,13 +490,12 @@ export const verifyForgotPasswordOtp = async (req, res) => {
 
 export const updatePassword = async (req, res) => {
   try {
-    const { email, mobileNumber, newPassword, confirmPassword } = req.body;
+    const { mobileOrEmail, newPassword, confirmPassword } = req.body;
 
-    if (!email && !mobileNumber) {
-      return res.status(400).json({
-        message: "Email ya mobile number required",
-        status: false,
-      });
+    if (!mobileOrEmail) {
+      return res
+        .status(400)
+        .json({ message: "Mobile/Email are required", status: false });
     }
 
     if (!newPassword || !confirmPassword) {
@@ -517,12 +512,10 @@ export const updatePassword = async (req, res) => {
       });
     }
 
-    let user;
-    if (email) {
-      user = await User.findOne({ email });
-    } else {
-      user = await User.findOne({ mobileNumber });
-    }
+    // Find user by email or mobile number
+    let user = await User.findOne({
+      $or: [{ email: mobileOrEmail }, { mobileNumber: mobileOrEmail }],
+    });
 
     if (!user) {
       return res.status(404).json({
@@ -548,7 +541,6 @@ export const updatePassword = async (req, res) => {
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
-
 
 export const updateProfileImage = async (req, res) => {
   try {
@@ -582,7 +574,6 @@ export const updateProfileImage = async (req, res) => {
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
-
 
 export const deleteProfileImage = async (req, res) => {
   try {
