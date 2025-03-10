@@ -107,7 +107,9 @@ export const resendOtp = async (req, res) => {
 
     if (typeof generateFourDigitOtp !== "function") {
       console.error("generateFourDigitOtp function is not defined!");
-      return res.status(500).json({ message: "OTP generation error", status: false });
+      return res
+        .status(500)
+        .json({ message: "OTP generation error", status: false });
     }
 
     const generatedOtp = generateFourDigitOtp();
@@ -120,12 +122,13 @@ export const resendOtp = async (req, res) => {
     res.status(200).json({
       message: "OTP resent successfully",
       status: true,
-      data:user,
+      data: user,
     });
-
   } catch (error) {
     console.error("Error in resendOtp:", error);
-    res.status(500).json({ message: "Server Error", status: false, error: error.message });
+    res
+      .status(500)
+      .json({ message: "Server Error", status: false, error: error.message });
   }
 };
 
@@ -324,11 +327,6 @@ export const updateProfile = async (req, res) => {
       profileFor,
     } = req.body;
 
-    // Fixing profile image path
-    const profileImage = req.file
-      ? req.file.path.split(path.sep).join("/")
-      : "";
-
     let user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: "User not found", status: false });
@@ -361,7 +359,6 @@ export const updateProfile = async (req, res) => {
     if (mobileNumber) user.mobileNumber = mobileNumber;
     if (countryCode) user.countryCode = countryCode;
     if (profileFor) user.profileFor = profileFor;
-    if (profileImage) user.profileImage = profileImage;
 
     await user.save();
 
@@ -407,7 +404,6 @@ export const generateForgotPasswordOtp = async (req, res) => {
     } else {
       user = await User.findOne({ mobileNumber });
     }
-    
 
     if (!user) {
       return res.status(404).json({
@@ -553,3 +549,77 @@ export const updatePassword = async (req, res) => {
   }
 };
 
+
+export const updateProfileImage = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (!req.files || req.files.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "Profile image is required", status: false });
+    }
+
+    // Fixing profile image paths
+    const photos = req.files.map((file) => file.path.split(path.sep).join("/"));
+
+    let user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    // Purani images ko delete mat karo, naye images ko add karo
+    user.photos = [...user.photos, ...photos];
+    await user.save();
+
+    res.status(200).json({
+      message: "Profile images updated successfully",
+      status: true,
+      user,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+
+export const deleteProfileImage = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { imagePath } = req.body;
+
+    if (!imagePath) {
+      return res
+        .status(400)
+        .json({ message: "Image path is required", status: false });
+    }
+
+    let user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    // Check if image exists in user's photos array
+    const imageIndex = user.photos.indexOf(imagePath);
+    if (imageIndex === -1) {
+      return res.status(400).json({
+        message: "Image not found in user's photos",
+        status: false,
+      });
+    }
+
+    // Remove the image from the array
+    user.photos.splice(imageIndex, 1);
+    await user.save();
+
+    res.status(200).json({
+      message: "Profile image deleted successfully",
+      status: true,
+      user,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
