@@ -1,5 +1,5 @@
 import express from "express";
-import { generateOtp, verifyOtp, resendOtp, completeRegistration, updateProfile, getUserById, login, generateForgotPasswordOtp, verifyForgotPasswordOtp, updatePassword, updateProfileImage, deleteProfileImage } from "../controllers/authController.js";
+import { generateOtp, verifyOtp, resendOtp, completeRegistration, updateProfile, getUserById, login, generateForgotPasswordOtp, verifyForgotPasswordOtp, updatePassword, updateProfileImage, deleteProfileImage, addMoneyToWallet, likeProfile, getAllProfiles } from "../controllers/authController.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 import { uploadProfile  } from "../middleware/uploadMiddleware.js";
 
@@ -20,5 +20,10 @@ router.post("/updatePassword", updatePassword);
 
 router.post("/updateProfileImage", authMiddleware, uploadProfile.array("photos", 20), updateProfileImage);
 router.post("/deleteProfileImage", authMiddleware, uploadProfile.array("photos", 20), deleteProfileImage);
+
+router.post("/addMoneyToWallet", authMiddleware, addMoneyToWallet);
+router.post("/likeProfile", authMiddleware, likeProfile);
+router.get("/getAllProfiles",authMiddleware, getAllProfiles);
+
 
 export default router;

@@ -614,3 +614,106 @@ export const deleteProfileImage = async (req, res) => {
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
+
+export const addMoneyToWallet = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    let { amount } = req.body;
+
+    // Convert amount to number
+    amount = parseFloat(amount);
+
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ message: "Invalid amount", status: false });
+    }
+
+    let user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    // Ensure wallet is a number
+    user.wallet = Number(user.wallet) + amount;
+    await user.save();
+
+    res.status(200).json({
+      message: `₹${amount} added to wallet successfully`,
+      status: true,
+      walletBalance: user.wallet,
+    });
+  } catch (error) {
+    console.error("Error in addMoneyToWallet:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const likeProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { profileId } = req.body;
+
+    if (!profileId) {
+      return res.status(400).json({ message: "Profile ID is required", status: false });
+    }
+
+    if (userId === profileId) {
+      return res.status(400).json({ message: "You cannot like your own profile", status: false });
+    }
+
+    let profile = await User.findById(profileId);
+    if (!profile) {
+      return res.status(404).json({ message: "Profile not found", status: false });
+    }
+
+    // Check if user has already liked the profile
+    const likeIndex = profile.likes.indexOf(userId);
+
+    if (likeIndex === -1) {
+      // If user has NOT liked the profile, add like
+      profile.likes.push(userId);
+      var message = "Profile liked successfully";
+    } else {
+      // If user has already liked, remove like (Unlike feature)
+      profile.likes.splice(likeIndex, 1);
+      var message = "Profile unliked successfully";
+    }
+
+    await profile.save();
+
+    res.status(200).json({
+      message,
+      status: true,
+      likeCount: profile.likes.length,
+    });
+
+  } catch (error) {
+    console.error("Error in likeProfile:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getAllProfiles = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch all user profiles
+    let profiles = await User.find({ isVerified: true }).select("-otp -otpExpiresAt -password");
+
+    // Add a field to indicate if the logged-in user has liked the profile
+    profiles = profiles.map((profile) => ({
+      ...profile._doc,
+      isLiked: profile.likes.includes(userId),
+      likeCount: profile.likes.length,
+    }));
+
+    res.status(200).json({
+      status: true,
+      profiles,
+    });
+  } catch (error) {
+    console.error("Error in getAllProfiles:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+

@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 const userSchema = new mongoose.Schema(
   {
     photos: [{ type: String, require: true }],
+    wallet: { type: Number, default: 0 },
     profileFor: {
       type: String,
       enum: [
@@ -62,6 +63,9 @@ const userSchema = new mongoose.Schema(
     isVerified: { type: Boolean, default: false },
     firebaseToken: { type: String },
     adminVerify: { type: Boolean, default: false },
+    likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    latitude: { type: String, required: true },
+    longitude: { type: String, required: true },
   },
   { timestamps: true }
 );
