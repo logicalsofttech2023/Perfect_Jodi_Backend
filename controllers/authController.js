@@ -5,6 +5,9 @@ import User from "../models/User.js";
 import path from "path";
 import Banner from "../models/Banner.js";
 import { isPointWithinRadius } from "geolib";
+import Policy from "../models/Policy.js";
+import Membership from "../models/Membership.js";
+import { stat } from "fs";
 
 const generateJwtToken = (user) => {
   return jwt.sign(
@@ -789,3 +792,121 @@ export const getAllBanners = async (req, res) => {
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
+
+export const getAllPolicy = async (req, res) => {
+  try {
+    const { type } = req.query;
+    if (!type) {
+      return res
+        .status(400)
+        .json({ message: "Policy type is required", status: false });
+    }
+
+    const policy = await Policy.findOne({ type });
+    if (!policy) {
+      return res
+        .status(404)
+        .json({ message: "Policy not found", status: false });
+    }
+
+    res
+      .status(200)
+      .json({ message: "Policy fetched successfully", status: true, policy });
+  } catch (error) {
+    console.error("Error fetching policy:", error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      status: false,
+      error: error.message,
+    });
+  }
+};
+
+export const getMembership = async (req, res) => {
+  try {
+    const membership = await Membership.find();
+    if (!membership) {
+      return res
+        .status(404)
+        .json({ message: "Membership not found", status: false });
+    }
+    res
+      .status(200)
+      .json({
+        message: "Membership fetched successfully",
+        status: true,
+        membership,
+      });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      status: false,
+      error: error.message,
+    });
+  }
+};
+
+export const buyMembership = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { membershipId } = req.body;
+
+    if (!membershipId) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+
+    // Fetch membership plan
+    const membership = await Membership.findById(membershipId);
+    if (!membership) {
+      return res.status(404).json({ message: "Membership plan not found" });
+    }
+
+    // Fetch user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if user already has an active membership
+    if (
+      user.membership &&
+      user.membership.endDate &&
+      new Date(user.membership.endDate) > new Date()
+    ) {
+      return res
+        .status(400)
+        .json({ message: "You already have an active membership.", status: false, membership: user.membership });
+    }
+
+    // Calculate startDate and endDate
+    const startDate = new Date();
+    let endDate = new Date(startDate);
+
+    if (membership.planType === "monthly") {
+      endDate.setMonth(endDate.getMonth() + 1);
+    } else if (membership.planType === "6months") {
+      endDate.setMonth(endDate.getMonth() + 6);
+    }
+
+    // Update user's membership
+    user.membership = {
+      planType: membership.planType,
+      startDate,
+      endDate,
+      membershipId: membership._id,
+    };
+
+    await user.save();
+
+    res.status(201).json({
+      message: "Membership purchased successfully",
+      membership: user.membership,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+

@@ -66,6 +66,12 @@ const userSchema = new mongoose.Schema(
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     latitude: { type: String },
     longitude: { type: String },
+    membership: {
+      planType: { type: String, enum: ["monthly", "6months"] },
+      startDate: { type: Date },
+      endDate: { type: Date },
+      membershipId: { type: mongoose.Schema.Types.ObjectId, ref: "Membership" },
+    },
   },
   { timestamps: true }
 );
