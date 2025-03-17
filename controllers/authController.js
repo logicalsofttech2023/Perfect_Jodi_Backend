@@ -250,7 +250,6 @@ export const completeRegistration = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { mobileOrEmail, password } = req.body;
-    console.log(mobileOrEmail, password);
 
     if (!mobileOrEmail) {
       return res
@@ -659,7 +658,7 @@ export const likeProfile = async (req, res) => {
         .json({ message: "You cannot like your own profile", status: false });
     }
 
-    let profile = await User.findById(profileId);
+    let profile = await User.findById(userId);
     if (!profile) {
       return res
         .status(404)
@@ -667,16 +666,16 @@ export const likeProfile = async (req, res) => {
     }
 
     // Check if user has already liked the profile
-    const likeIndex = profile.likes.indexOf(userId);
+    const likeIndex = profile.likes.indexOf(profileId);
 
     if (likeIndex === -1) {
       // If user has NOT liked the profile, add like
-      profile.likes.push(userId);
+      profile.likes.push(profileId);
       var message = "Profile liked successfully";
     } else {
       // If user has already liked, remove like (Unlike feature)
       profile.likes.splice(likeIndex, 1);
-      var message = "Profile unliked successfully";
+      var message = "Profile unlike successfully";
     }
 
     await profile.save();
@@ -688,6 +687,28 @@ export const likeProfile = async (req, res) => {
     });
   } catch (error) {
     console.error("Error in likeProfile:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getAllLikedProfiles = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Find the user and populate the liked profiles
+    const user = await User.findById(userId).populate("likes", "-password -otp");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    res.status(200).json({
+      message: "Liked profiles fetched successfully",
+      status: true,
+      likedProfiles: user.likes,
+    });
+  } catch (error) {
+    console.error("Error in getAllLikedProfiles:", error);
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
@@ -909,5 +930,4 @@ export const buyMembership = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
-
 
