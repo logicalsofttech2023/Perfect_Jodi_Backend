@@ -3,6 +3,8 @@ import bcrypt from "bcrypt";
 import mongoose from "mongoose";
 import User from "../models/User.js";
 import path from "path";
+import Banner from "../models/Banner.js";
+import { isPointWithinRadius } from "geolib";
 
 const generateJwtToken = (user) => {
   return jwt.sign(
@@ -18,10 +20,10 @@ const generateFourDigitOtp = () => {
 
 export const generateOtp = async (req, res) => {
   try {
-    const { mobileNumber, countryCode } = req.body;
-    if (!mobileNumber || !countryCode) {
+    const { mobileNumber, countryCode, email } = req.body;
+    if (!mobileNumber || !countryCode || !email) {
       return res.status(400).json({
-        message: "mobileNumber,countryCode number is required",
+        message: "mobileNumber,countryCode,email is required",
         status: false,
       });
     }
@@ -38,6 +40,7 @@ export const generateOtp = async (req, res) => {
       user = new User({
         mobileNumber,
         countryCode,
+        email,
         otp: generatedOtp,
         otpExpiresAt,
       });
@@ -162,6 +165,8 @@ export const completeRegistration = async (req, res) => {
       countryCode,
       password,
       profileFor,
+      latitude,
+      longitude,
     } = req.body;
 
     const photos = req.files
@@ -173,20 +178,6 @@ export const completeRegistration = async (req, res) => {
       return res
         .status(400)
         .json({ message: "User not verified", status: false });
-    }
-
-    if (user.email) {
-      return res
-        .status(400)
-        .json({ message: "User already register", status: false });
-    }
-
-    // Check if another user exists with the same email
-    let existingUser = await User.findOne({ email });
-    if (existingUser && existingUser._id.toString() !== user._id.toString()) {
-      return res
-        .status(400)
-        .json({ message: "Email is already in use", status: false });
     }
 
     if (
@@ -237,6 +228,8 @@ export const completeRegistration = async (req, res) => {
       noOfBrothers,
       photos: photos || user.photos,
       password: hashedPassword,
+      latitude,
+      longitude,
     });
 
     await user.save();
@@ -254,6 +247,7 @@ export const completeRegistration = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { mobileOrEmail, password } = req.body;
+    console.log(mobileOrEmail, password);
 
     if (!mobileOrEmail) {
       return res
@@ -401,7 +395,6 @@ export const generateForgotPasswordOtp = async (req, res) => {
     let user = await User.findOne({
       $or: [{ email: mobileOrEmail }, { mobileNumber: mobileOrEmail }],
     });
-   
 
     if (!user) {
       return res.status(404).json({
@@ -449,7 +442,6 @@ export const verifyForgotPasswordOtp = async (req, res) => {
     let user = await User.findOne({
       $or: [{ email: mobileOrEmail }, { mobileNumber: mobileOrEmail }],
     });
-   
 
     if (!user) {
       return res.status(404).json({
@@ -653,16 +645,22 @@ export const likeProfile = async (req, res) => {
     const { profileId } = req.body;
 
     if (!profileId) {
-      return res.status(400).json({ message: "Profile ID is required", status: false });
+      return res
+        .status(400)
+        .json({ message: "Profile ID is required", status: false });
     }
 
     if (userId === profileId) {
-      return res.status(400).json({ message: "You cannot like your own profile", status: false });
+      return res
+        .status(400)
+        .json({ message: "You cannot like your own profile", status: false });
     }
 
     let profile = await User.findById(profileId);
     if (!profile) {
-      return res.status(404).json({ message: "Profile not found", status: false });
+      return res
+        .status(404)
+        .json({ message: "Profile not found", status: false });
     }
 
     // Check if user has already liked the profile
@@ -685,7 +683,6 @@ export const likeProfile = async (req, res) => {
       status: true,
       likeCount: profile.likes.length,
     });
-
   } catch (error) {
     console.error("Error in likeProfile:", error);
     res.status(500).json({ message: "Server Error", status: false });
@@ -696,10 +693,21 @@ export const getAllProfiles = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Fetch all user profiles
-    let profiles = await User.find({ isVerified: true }).select("-otp -otpExpiresAt -password");
+    // Get logged-in user's religion
+    const loggedInUser = await User.findById(userId);
+    if (!loggedInUser) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
 
-    // Add a field to indicate if the logged-in user has liked the profile
+    const userReligion = loggedInUser.religion;
+
+    // Fetch profiles with the same religion and verified users
+    let profiles = await User.find({
+      isVerified: true,
+      religion: userReligion,
+    }).select("-otp -otpExpiresAt -password");
+
+    // Add isLiked and likeCount fields
     profiles = profiles.map((profile) => ({
       ...profile._doc,
       isLiked: profile.likes.includes(userId),
@@ -716,4 +724,67 @@ export const getAllProfiles = async (req, res) => {
   }
 };
 
+export const getAllNearProfiles = async (req, res) => {
+  try {
+    const userId = req.user.id;
 
+    // Get logged-in user details
+    const loggedInUser = await User.findById(userId);
+    if (!loggedInUser) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    const { religion, latitude, longitude } = loggedInUser;
+
+    if (!latitude || !longitude) {
+      return res
+        .status(400)
+        .json({ message: "Location not set", status: false });
+    }
+
+    // Fetch profiles with the same religion and verified users, exclude logged-in user
+    let profiles = await User.find({
+      isVerified: true,
+      religion: religion,
+      _id: { $ne: userId }, // Exclude logged-in user
+    }).select("-otp -otpExpiresAt -password");
+
+    // Filter profiles within 30 km radius and add isLiked + likeCount fields
+    profiles = profiles
+      .filter((profile) => {
+        if (!profile.latitude || !profile.longitude) return false;
+
+        return isPointWithinRadius(
+          { latitude, longitude },
+          { latitude: profile.latitude, longitude: profile.longitude },
+          30000 // 30 km radius
+        );
+      })
+      .map((profile) => ({
+        ...profile._doc,
+        isLiked: profile.likes.includes(userId),
+        likeCount: profile.likes.length,
+      }));
+
+    res.status(200).json({
+      status: true,
+      profiles,
+    });
+  } catch (error) {
+    console.error("Error in getAllNearProfiles:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getAllBanners = async (req, res) => {
+  try {
+    const banners = await Banner.find();
+    res.status(200).json({
+      message: "Banner fetch successfully",
+      status: true,
+      banners,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};

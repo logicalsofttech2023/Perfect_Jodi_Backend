@@ -56,7 +56,7 @@ const userSchema = new mongoose.Schema(
     noOfBrothers: { type: Number, default: 0 },
     mobileNumber: { type: String, unique: true },
     countryCode: { type: String },
-    email: { type: String },
+    email: { type: String, unique: true },
     password: { type: String },
     otp: { type: String },
     otpExpiresAt: { type: Date },
@@ -64,8 +64,8 @@ const userSchema = new mongoose.Schema(
     firebaseToken: { type: String },
     adminVerify: { type: Boolean, default: false },
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    latitude: { type: String, required: true },
-    longitude: { type: String, required: true },
+    latitude: { type: String },
+    longitude: { type: String },
   },
   { timestamps: true }
 );

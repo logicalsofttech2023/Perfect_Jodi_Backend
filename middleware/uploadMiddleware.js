@@ -11,6 +11,15 @@ const profileStorage = multer.diskStorage({
     }
 });
 
+const bannerStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, "uploads/Banner/");
+    },
+    filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${file.originalname}`);
+    }
+});
+
 // File filter for all image formats
 const fileFilter = (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp|bmp|tiff/;
@@ -27,6 +36,12 @@ const fileFilter = (req, file, cb) => {
 // Profile image upload
 export const uploadProfile = multer({ 
     storage: profileStorage, 
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 } // 20MB limit
+});
+
+export const uploadBanner = multer({ 
+    storage: bannerStorage, 
     fileFilter,
     limits: { fileSize: 20 * 1024 * 1024 } // 20MB limit
 });
