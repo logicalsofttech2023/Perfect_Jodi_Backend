@@ -726,6 +726,7 @@ export const getAllProfiles = async (req, res) => {
 
 export const getAllNearProfiles = async (req, res) => {
   try {
+    const { latitude, longitude } = req.query;
     const userId = req.user.id;
 
     // Get logged-in user details
@@ -734,7 +735,7 @@ export const getAllNearProfiles = async (req, res) => {
       return res.status(404).json({ message: "User not found", status: false });
     }
 
-    const { religion, latitude, longitude } = loggedInUser;
+    const { religion } = loggedInUser;
 
     if (!latitude || !longitude) {
       return res
