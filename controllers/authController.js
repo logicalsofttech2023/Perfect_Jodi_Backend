@@ -708,6 +708,7 @@ export const getAllProfiles = async (req, res) => {
     let profiles = await User.find({
       isVerified: true,
       religion: userReligion,
+      _id: { $ne: userId },
     }).select("-otp -otpExpiresAt -password");
 
     // Add isLiked and likeCount fields
@@ -750,7 +751,7 @@ export const getAllNearProfiles = async (req, res) => {
     let profiles = await User.find({
       isVerified: true,
       religion: religion,
-      _id: { $ne: userId }, // Exclude logged-in user
+      _id: { $ne: userId },
     }).select("-otp -otpExpiresAt -password");
 
     // Filter profiles within 30 km radius and add isLiked + likeCount fields
