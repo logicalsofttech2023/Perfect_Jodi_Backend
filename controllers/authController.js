@@ -825,41 +825,22 @@ export const getAllProfiles = async (req, res) => {
       isVerified: true,
       religion: userReligion,
       _id: { $ne: userId },
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
     })
       .select("-otp -otpExpiresAt -password")
       .lean();
-=======
-    }).select("-otp -otpExpiresAt -password");
->>>>>>> parent of 3280d22 (code live)
-=======
-    }).select("-otp -otpExpiresAt -password");
->>>>>>> parent of 3280d22 (code live)
-=======
-    }).select("-otp -otpExpiresAt -password");
->>>>>>> parent of 3280d22 (code live)
 
     // Check if profile._id exists in the logged-in user's likes array
     profiles = profiles.map((profile) => ({
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
       ...profile,
       isLiked: likedProfiles.includes(String(profile._id)),
-=======
       ...profile._doc,
       isLiked: profile.likes.includes(userId),
->>>>>>> parent of 3280d22 (code live)
-=======
+
       ...profile._doc,
       isLiked: profile.likes.includes(userId),
->>>>>>> parent of 3280d22 (code live)
-=======
+
       ...profile._doc,
       isLiked: profile.likes.includes(userId),
->>>>>>> parent of 3280d22 (code live)
       likeCount: profile.likes.length,
     }));
 
@@ -915,20 +896,10 @@ export const getAllNearProfiles = async (req, res) => {
           30000 // 30 km radius
         );
       })
-      .map((profile) => ({
-<<<<<<< HEAD
-        ...profile,
+      .map((profile) => ({        ...profile,
         isLiked: likedProfiles.includes(String(profile._id)),
-=======
         ...profile._doc,
         isLiked: profile.likes.includes(userId),
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> parent of 3280d22 (code live)
-=======
->>>>>>> parent of 3280d22 (code live)
-=======
->>>>>>> parent of 3280d22 (code live)
         likeCount: profile.likes.length,
       }));
 
@@ -1036,23 +1007,15 @@ export const buyMembership = async (req, res) => {
       user.membership.endDate &&
       new Date(user.membership.endDate) > new Date()
     ) {
-<<<<<<< HEAD
       return res.status(400).json({
         message: "You already have an active membership.",
         status: false,
         membership: user.membership,
       });
-=======
+
       return res
         .status(400)
         .json({ message: "You already have an active membership.", status: false, membership: user.membership });
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> parent of 3280d22 (code live)
-=======
->>>>>>> parent of 3280d22 (code live)
-=======
->>>>>>> parent of 3280d22 (code live)
     }
 
     // Check if the user has enough balance in the wallet
