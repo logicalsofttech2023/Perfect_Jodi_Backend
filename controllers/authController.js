@@ -8,6 +8,8 @@ import { isPointWithinRadius } from "geolib";
 import Policy from "../models/Policy.js";
 import Membership from "../models/Membership.js";
 import { stat } from "fs";
+import crypto from "crypto";
+import Transaction from "../models/Transaction.js";
 
 const generateJwtToken = (user) => {
   return jwt.sign(
@@ -20,7 +22,16 @@ const generateJwtToken = (user) => {
 const generateFourDigitOtp = () => {
   return Math.floor(1000 + Math.random() * 9000).toString(); // Generates a random 4-digit number
 };
+const generateReferralId = () => {
+  const uniquePart = crypto.randomBytes(3).toString("hex").toUpperCase(); // Random 6 characters
+  return `PJ${uniquePart}`;
+};
 
+const generateTransactionId = () => {
+  const randomString = crypto.randomBytes(5).toString("hex").toUpperCase(); // 10 characters
+  const formattedId = `PJ${randomString.match(/.{1,2}/g).join("")}`; // PJ + split into 2-char groups
+  return formattedId;
+};
 export const generateOtp = async (req, res) => {
   try {
     const { mobileNumber, countryCode, email } = req.body;
@@ -170,8 +181,20 @@ export const completeRegistration = async (req, res) => {
       profileFor,
       latitude,
       longitude,
+      referredBy,
     } = req.body;
 
+    // Inside completeRegistration function
+    const referralId = generateReferralId(mobileNumber);
+
+    // Check if referredBy exists in the system
+    let referrer = null;
+    if (referredBy) {
+      referrer = await User.findOne({ referralId: referredBy });
+      if (!referrer) {
+        return res.status(400).json({ message: "Invalid referral code", status: false });
+      }
+    }
     const photos = req.files
       ? req.files.map((file) => file.path.split(path.sep).join("/"))
       : [];
@@ -233,6 +256,8 @@ export const completeRegistration = async (req, res) => {
       password: hashedPassword,
       latitude,
       longitude,
+      referralId,
+      referredBy: referrer ? referrer._id : null,
     });
 
     await user.save();
@@ -247,9 +272,55 @@ export const completeRegistration = async (req, res) => {
   }
 };
 
+export const resetPassword = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    // Validate inputs
+    if (!userId || !oldPassword || !newPassword) {
+      return res
+        .status(400)
+        .json({ message: "All fields are required", status: false });
+    }
+
+    // Find user by userId
+    const user = await User.findById(userId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ message: "User not found", status: false });
+    }
+
+    // Check if old password matches
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res
+        .status(400)
+        .json({ message: "Old password is incorrect", status: false });
+    }
+
+    // Hash the new password
+    const saltRounds = 10;
+    const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update user's password
+    user.password = hashedNewPassword;
+    await user.save();
+
+    res.status(200).json({
+      message: "Password reset successfully",
+      status: true,
+    });
+  } catch (error) {
+    console.error("Error in resetPassword:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
 export const login = async (req, res) => {
   try {
-    const { mobileOrEmail, password } = req.body;
+    const { mobileOrEmail, password, fcmToken } = req.body;
 
     if (!mobileOrEmail) {
       return res
@@ -276,6 +347,12 @@ export const login = async (req, res) => {
       }
     }
 
+    // Update FCM Token if provided
+    if (fcmToken) {
+      user.firebaseToken = fcmToken;
+      await user.save();
+    }
+
     // Generate JWT token
     const token = generateJwtToken(user);
 
@@ -290,6 +367,7 @@ export const login = async (req, res) => {
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
+
 
 export const updateProfile = async (req, res) => {
   try {
@@ -630,10 +708,26 @@ export const addMoneyToWallet = async (req, res) => {
     user.wallet = Number(user.wallet) + amount;
     await user.save();
 
+    // Generate unique transaction ID using crypto
+    const transactionId = generateTransactionId();
+
+    // Create a new transaction record
+    const transaction = new Transaction({
+      userId,
+      amount,
+      type: "addMoney",
+      status: "success",
+      transactionId,
+      description: `Added ₹${amount} to wallet`,
+    });
+
+    await transaction.save();
+
     res.status(200).json({
       message: `₹${amount} added to wallet successfully`,
       status: true,
       walletBalance: user.wallet,
+      transaction,
     });
   } catch (error) {
     console.error("Error in addMoneyToWallet:", error);
@@ -717,25 +811,55 @@ export const getAllProfiles = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Get logged-in user's religion
-    const loggedInUser = await User.findById(userId);
+    // Get logged-in user's religion and likes array
+    const loggedInUser = await User.findById(userId).select("religion likes");
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found", status: false });
     }
 
     const userReligion = loggedInUser.religion;
+    const likedProfiles = loggedInUser.likes.map((id) => String(id));
 
     // Fetch profiles with the same religion and verified users
     let profiles = await User.find({
       isVerified: true,
       religion: userReligion,
       _id: { $ne: userId },
+<<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
+    })
+      .select("-otp -otpExpiresAt -password")
+      .lean();
+=======
     }).select("-otp -otpExpiresAt -password");
+>>>>>>> parent of 3280d22 (code live)
+=======
+    }).select("-otp -otpExpiresAt -password");
+>>>>>>> parent of 3280d22 (code live)
+=======
+    }).select("-otp -otpExpiresAt -password");
+>>>>>>> parent of 3280d22 (code live)
 
-    // Add isLiked and likeCount fields
+    // Check if profile._id exists in the logged-in user's likes array
     profiles = profiles.map((profile) => ({
+<<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
+      ...profile,
+      isLiked: likedProfiles.includes(String(profile._id)),
+=======
       ...profile._doc,
       isLiked: profile.likes.includes(userId),
+>>>>>>> parent of 3280d22 (code live)
+=======
+      ...profile._doc,
+      isLiked: profile.likes.includes(userId),
+>>>>>>> parent of 3280d22 (code live)
+=======
+      ...profile._doc,
+      isLiked: profile.likes.includes(userId),
+>>>>>>> parent of 3280d22 (code live)
       likeCount: profile.likes.length,
     }));
 
@@ -755,12 +879,12 @@ export const getAllNearProfiles = async (req, res) => {
     const userId = req.user.id;
 
     // Get logged-in user details
-    const loggedInUser = await User.findById(userId);
+    const loggedInUser = await User.findById(userId).select("religion likes");
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found", status: false });
     }
 
-    const { religion } = loggedInUser;
+    const { religion, likes } = loggedInUser;
 
     if (!latitude || !longitude) {
       return res
@@ -773,22 +897,38 @@ export const getAllNearProfiles = async (req, res) => {
       isVerified: true,
       religion: religion,
       _id: { $ne: userId },
-    }).select("-otp -otpExpiresAt -password");
+    }).select("-otp -otpExpiresAt -password").lean();
+
+    const likedProfiles = likes.map((id) => String(id));
 
     // Filter profiles within 30 km radius and add isLiked + likeCount fields
     profiles = profiles
       .filter((profile) => {
         if (!profile.latitude || !profile.longitude) return false;
 
-        return isPointWithinRadius(
-          { latitude, longitude },
-          { latitude: profile.latitude, longitude: profile.longitude },
+        return geolib.isPointWithinRadius(
+          { latitude: parseFloat(latitude), longitude: parseFloat(longitude) },
+          {
+            latitude: parseFloat(profile.latitude),
+            longitude: parseFloat(profile.longitude),
+          },
           30000 // 30 km radius
         );
       })
       .map((profile) => ({
+<<<<<<< HEAD
+        ...profile,
+        isLiked: likedProfiles.includes(String(profile._id)),
+=======
         ...profile._doc,
         isLiked: profile.likes.includes(userId),
+<<<<<<< HEAD
+<<<<<<< HEAD
+>>>>>>> parent of 3280d22 (code live)
+=======
+>>>>>>> parent of 3280d22 (code live)
+=======
+>>>>>>> parent of 3280d22 (code live)
         likeCount: profile.likes.length,
       }));
 
@@ -875,19 +1015,19 @@ export const buyMembership = async (req, res) => {
     const { membershipId } = req.body;
 
     if (!membershipId) {
-      return res.status(400).json({ message: "Missing required fields" });
+      return res.status(400).json({ message: "Missing required fields", status: false });
     }
 
     // Fetch membership plan
     const membership = await Membership.findById(membershipId);
     if (!membership) {
-      return res.status(404).json({ message: "Membership plan not found" });
+      return res.status(404).json({ message: "Membership plan not found", status: false });
     }
 
     // Fetch user
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({ message: "User not found", status: false });
     }
 
     // Check if user already has an active membership
@@ -896,10 +1036,36 @@ export const buyMembership = async (req, res) => {
       user.membership.endDate &&
       new Date(user.membership.endDate) > new Date()
     ) {
+<<<<<<< HEAD
+      return res.status(400).json({
+        message: "You already have an active membership.",
+        status: false,
+        membership: user.membership,
+      });
+=======
       return res
         .status(400)
         .json({ message: "You already have an active membership.", status: false, membership: user.membership });
+<<<<<<< HEAD
+<<<<<<< HEAD
+>>>>>>> parent of 3280d22 (code live)
+=======
+>>>>>>> parent of 3280d22 (code live)
+=======
+>>>>>>> parent of 3280d22 (code live)
     }
+
+    // Check if the user has enough balance in the wallet
+    if (user.wallet < membership.price) {
+      return res.status(400).json({
+        message: "Insufficient wallet balance.",
+        status: false,
+        walletBalance: user.wallet,
+      });
+    }
+
+    // Deduct membership price from the user's wallet
+    user.wallet -= membership.price;
 
     // Calculate startDate and endDate
     const startDate = new Date();
@@ -921,13 +1087,56 @@ export const buyMembership = async (req, res) => {
 
     await user.save();
 
+    // Generate unique transaction ID
+    const transactionId = generateTransactionId();
+
+    // Create a new transaction record
+    const transaction = new Transaction({
+      userId,
+      amount: membership.price,
+      type: "subscription",
+      status: "success",
+      transactionId,
+      description: `Purchased ${membership.planType} membership`,
+    });
+
+    await transaction.save();
+
     res.status(201).json({
       message: "Membership purchased successfully",
+      walletBalance: user.wallet,
       membership: user.membership,
+      transaction,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+    console.error("Error in buyMembership:", error);
+    res.status(500).json({ message: "Internal server error", status: false });
   }
 };
 
+
+export const getWalletWithTransactions = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch user with wallet balance
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    // Fetch user's transactions, sorted by the most recent
+    const transactions = await Transaction.find({ userId })
+      .sort({ createdAt: -1 }) // Latest transactions first
+      .exec();
+
+    res.status(200).json({
+      status: true,
+      walletBalance: user.wallet,
+      transactions,
+    });
+  } catch (error) {
+    console.error("Error in getWalletWithTransactions:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};

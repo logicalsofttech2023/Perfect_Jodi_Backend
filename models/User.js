@@ -72,6 +72,9 @@ const userSchema = new mongoose.Schema(
       endDate: { type: Date },
       membershipId: { type: mongoose.Schema.Types.ObjectId, ref: "Membership" },
     },
+    referralId: { type: String, unique: true },
+    referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    fcmToken: { type: String },
   },
   { timestamps: true }
 );

@@ -1,5 +1,5 @@
 import express from "express";
-import { generateOtp, verifyOtp, resendOtp, completeRegistration, updateProfile, getUserById, login, generateForgotPasswordOtp, verifyForgotPasswordOtp, updatePassword, updateProfileImage, deleteProfileImage, addMoneyToWallet, likeProfile, getAllProfiles, getAllBanners, getAllNearProfiles, getAllPolicy, getMembership, buyMembership, getAllLikedProfiles } from "../controllers/authController.js";
+import { generateOtp, verifyOtp, resendOtp, completeRegistration, updateProfile, getUserById, login, generateForgotPasswordOtp, verifyForgotPasswordOtp, updatePassword, updateProfileImage, deleteProfileImage, addMoneyToWallet, likeProfile, getAllProfiles, getAllBanners, getAllNearProfiles, getAllPolicy, getMembership, buyMembership, getAllLikedProfiles, getWalletWithTransactions, resetPassword } from "../controllers/authController.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 import { uploadProfile  } from "../middleware/uploadMiddleware.js";
 
@@ -27,9 +27,11 @@ router.get("/getAllProfiles",authMiddleware, getAllProfiles);
 router.get("/getAllBanners", getAllBanners);
 router.get("/getAllNearProfiles",authMiddleware, getAllNearProfiles);
 router.get("/getAllPolicy",authMiddleware, getAllPolicy);
-router.get("/getMembership",authMiddleware, getMembership);
+router.get("/getMembership", getMembership);
 router.post("/buyMembership", authMiddleware, buyMembership);
 router.get("/getAllLikedProfiles",authMiddleware, getAllLikedProfiles);
+router.get("/getWalletWithTransactions", authMiddleware, getWalletWithTransactions);
+router.post("/resetPassword", authMiddleware, resetPassword);
 
 
 
