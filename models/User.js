@@ -23,18 +23,6 @@ const userSchema = new mongoose.Schema(
     lastName: { type: String },
     dob: { type: Date },
     age: { type: String },
-    religion: {
-      type: String,
-      enum: [
-        "Hindu",
-        "Muslim",
-        "Christian",
-        "Sikh",
-        "Jain",
-        "Buddhist",
-        "Other",
-      ],
-    },
     height: { type: Number },
     weight: { type: Number },
     address: { type: String },
@@ -75,6 +63,8 @@ const userSchema = new mongoose.Schema(
     referralId: { type: String, unique: true },
     referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     fcmToken: { type: String },
+    religion: { type: mongoose.Schema.Types.ObjectId, ref: "Religion" }, // Religion ID
+    community: { type: mongoose.Schema.Types.ObjectId },
   },
   { timestamps: true }
 );

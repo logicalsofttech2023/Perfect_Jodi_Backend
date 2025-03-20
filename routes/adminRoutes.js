@@ -1,6 +1,6 @@
 import express from "express";
 import { uploadBanner } from "../middleware/uploadMiddleware.js";
-import { addBanner, getBanners, policyUpdate, getPolicy, addUpdateMembership, getAllMembership } from "../controllers/adminController.js";
+import { addBanner, getBanners, policyUpdate, getPolicy, addUpdateMembership, getAllMembership, addReligion, addCommunity, getReligions, getCommunitiesByReligion } from "../controllers/adminController.js";
 
 const router = express.Router();
 
@@ -16,6 +16,12 @@ router.post("/addUpdateMembership", addUpdateMembership);
 
 router.get("/getAllMembership", getAllMembership);
 
+router.post("/addReligion", addReligion);
 
+router.post("/addCommunity", addCommunity);
+
+router.get("/getReligions", getReligions);
+
+router.get("/getCommunitiesByReligion", getCommunitiesByReligion);
 
 export default router;

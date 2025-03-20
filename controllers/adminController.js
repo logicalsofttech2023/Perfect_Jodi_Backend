@@ -3,6 +3,7 @@ import path from "path";
 import Policy from "../models/Policy.js";
 import Membership from "../models/Membership.js";
 import { stat } from "fs";
+import Religion from "../models/Religion.js";
 
 export const addBanner = async (req, res) => {
   try {
@@ -136,3 +137,108 @@ export const getAllMembership = async (req, res) => {
     });
   }
 };
+
+export const addReligion = async (req, res) => {
+  try {
+    const { religionName } = req.body;
+    const existingReligion = await Religion.findOne({ religionName });
+
+    if (existingReligion) {
+      return res.status(400).json({ message: "Religion already exists" });
+    }
+
+    const religion = new Religion({ religionName, communities: [] });
+    await religion.save();
+
+    res.status(201).json({ message: "Religion added successfully", religion });
+  } catch (error) {
+    res.status(500).json({ message: "Error adding religion", error });
+  }
+};
+
+export const addCommunity = async (req, res) => {
+  try {
+    const { religionId, communityNames } = req.body; // Expecting an array of names
+
+    if (!Array.isArray(communityNames) || communityNames.length === 0) {
+      return res.status(400).json({ message: "Community names should be an array with at least one value" });
+    }
+
+    const religion = await Religion.findById(religionId);
+    if (!religion) {
+      return res.status(404).json({ message: "Religion not found" });
+    }
+
+    // Filter out existing communities to avoid duplicates
+    const existingCommunities = religion.communities.map(c => c.name);
+    const newCommunities = communityNames
+      .filter(name => !existingCommunities.includes(name))
+      .map(name => ({ name }));
+
+    if (newCommunities.length === 0) {
+      return res.status(400).json({ message: "All communities already exist in this religion" });
+    }
+
+    // Add new communities and save
+    religion.communities.push(...newCommunities);
+    await religion.save();
+
+    res.status(201).json({ message: "Communities added successfully", religion });
+  } catch (error) {
+    res.status(500).json({ message: "Error adding communities", error });
+  }
+};
+
+export const getReligions = async (req, res) => {
+  try {
+    const religions = await Religion.find().select("_id religionName communities");
+
+    res.status(200).json({
+      status: true,
+      message: "Religions fetched successfully",
+      data: religions
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: false,
+      message: "Error fetching religions",
+      error: error.message
+    });
+  }
+};
+
+export const getCommunitiesByReligion = async (req, res) => {
+  try {
+    const { religionId } = req.query;
+
+    if (!religionId) {
+      return res.status(400).json({
+        status: false,
+        message: "Religion ID is required"
+      });
+    }
+
+    const religion = await Religion.findById(religionId).select("communities name");
+
+    if (!religion) {
+      return res.status(404).json({
+        status: false,
+        message: "Religion not found"
+      });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "Communities fetched successfully",
+      religionName: religion.name,
+      data: religion.communities
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: false,
+      message: "Error fetching communities",
+      error: error.message
+    });
+  }
+};
+

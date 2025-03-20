@@ -10,6 +10,7 @@ import Membership from "../models/Membership.js";
 import { stat } from "fs";
 import crypto from "crypto";
 import Transaction from "../models/Transaction.js";
+import Religion from "../models/Religion.js";
 
 const generateJwtToken = (user) => {
   return jwt.sign(
@@ -158,7 +159,6 @@ export const completeRegistration = async (req, res) => {
       lastName,
       dob,
       gender,
-      religion,
       height,
       weight,
       address,
@@ -182,7 +182,25 @@ export const completeRegistration = async (req, res) => {
       latitude,
       longitude,
       referredBy,
+      religionId,
+      communityId,
     } = req.body;
+
+    // Validate Religion ID
+    const religion = await Religion.findById(religionId);
+    if (!religion) {
+      return res
+        .status(400)
+        .json({ message: "Invalid religion ID", status: false });
+    }
+
+    // Validate Community ID (from nested communities)
+    const community = religion.communities.id(communityId);
+    if (!community) {
+      return res
+        .status(400)
+        .json({ message: "Invalid community ID", status: false });
+    }
 
     // Inside completeRegistration function
     const referralId = generateReferralId(mobileNumber);
@@ -192,7 +210,9 @@ export const completeRegistration = async (req, res) => {
     if (referredBy) {
       referrer = await User.findOne({ referralId: referredBy });
       if (!referrer) {
-        return res.status(400).json({ message: "Invalid referral code", status: false });
+        return res
+          .status(400)
+          .json({ message: "Invalid referral code", status: false });
       }
     }
     const photos = req.files
@@ -258,6 +278,8 @@ export const completeRegistration = async (req, res) => {
       longitude,
       referralId,
       referredBy: referrer ? referrer._id : null,
+      religion: religionId,
+      community: communityId,
     });
 
     await user.save();
@@ -287,9 +309,7 @@ export const resetPassword = async (req, res) => {
     // Find user by userId
     const user = await User.findById(userId);
     if (!user) {
-      return res
-        .status(404)
-        .json({ message: "User not found", status: false });
+      return res.status(404).json({ message: "User not found", status: false });
     }
 
     // Check if old password matches
@@ -367,7 +387,6 @@ export const login = async (req, res) => {
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
-
 
 export const updateProfile = async (req, res) => {
   try {
@@ -448,18 +467,27 @@ export const updateProfile = async (req, res) => {
 export const getUserById = async (req, res) => {
   try {
     const userId = req.user.id;
-    let user = await User.findById(userId).select("-otp -otpExpiresAt"); // Exclude sensitive fields
+
+    let user = await User.findById(userId)
+      .populate("religion", "religionName")
+      .populate("community", "name")
+      .select("-otp -otpExpiresAt");
+
     if (!user) {
       return res.status(404).json({ message: "User not found", status: false });
     }
 
-    res
-      .status(200)
-      .json({ message: "User fetched successfully", status: true, data: user });
+    res.status(200).json({
+      message: "User fetched successfully",
+      status: true,
+      data: user,
+    });
   } catch (error) {
+    console.error("Error in getUserById:", error);
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
+
 
 export const generateForgotPasswordOtp = async (req, res) => {
   try {
@@ -790,7 +818,10 @@ export const getAllLikedProfiles = async (req, res) => {
     const userId = req.user.id;
 
     // Find the user and populate the liked profiles
-    const user = await User.findById(userId).populate("likes", "-password -otp");
+    const user = await User.findById(userId).populate(
+      "likes",
+      "-password -otp"
+    );
 
     if (!user) {
       return res.status(404).json({ message: "User not found", status: false });
@@ -811,7 +842,6 @@ export const getAllProfiles = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Get logged-in user's religion and likes array
     const loggedInUser = await User.findById(userId).select("religion likes");
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found", status: false });
@@ -820,7 +850,6 @@ export const getAllProfiles = async (req, res) => {
     const userReligion = loggedInUser.religion;
     const likedProfiles = loggedInUser.likes.map((id) => String(id));
 
-    // Fetch profiles with the same religion and verified users
     let profiles = await User.find({
       isVerified: true,
       religion: userReligion,
@@ -829,18 +858,9 @@ export const getAllProfiles = async (req, res) => {
       .select("-otp -otpExpiresAt -password")
       .lean();
 
-    // Check if profile._id exists in the logged-in user's likes array
     profiles = profiles.map((profile) => ({
       ...profile,
       isLiked: likedProfiles.includes(String(profile._id)),
-      ...profile._doc,
-      isLiked: profile.likes.includes(userId),
-
-      ...profile._doc,
-      isLiked: profile.likes.includes(userId),
-
-      ...profile._doc,
-      isLiked: profile.likes.includes(userId),
       likeCount: profile.likes.length,
     }));
 
@@ -859,7 +879,6 @@ export const getAllNearProfiles = async (req, res) => {
     const { latitude, longitude } = req.query;
     const userId = req.user.id;
 
-    // Get logged-in user details
     const loggedInUser = await User.findById(userId).select("religion likes");
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found", status: false });
@@ -873,16 +892,16 @@ export const getAllNearProfiles = async (req, res) => {
         .json({ message: "Location not set", status: false });
     }
 
-    // Fetch profiles with the same religion and verified users, exclude logged-in user
     let profiles = await User.find({
       isVerified: true,
       religion: religion,
       _id: { $ne: userId },
-    }).select("-otp -otpExpiresAt -password").lean();
+    })
+      .select("-otp -otpExpiresAt -password")
+      .lean();
 
     const likedProfiles = likes.map((id) => String(id));
 
-    // Filter profiles within 30 km radius and add isLiked + likeCount fields
     profiles = profiles
       .filter((profile) => {
         if (!profile.latitude || !profile.longitude) return false;
@@ -896,10 +915,9 @@ export const getAllNearProfiles = async (req, res) => {
           30000 // 30 km radius
         );
       })
-      .map((profile) => ({        ...profile,
+      .map((profile) => ({
+        ...profile,
         isLiked: likedProfiles.includes(String(profile._id)),
-        ...profile._doc,
-        isLiked: profile.likes.includes(userId),
         likeCount: profile.likes.length,
       }));
 
@@ -957,19 +975,29 @@ export const getAllPolicy = async (req, res) => {
 
 export const getMembership = async (req, res) => {
   try {
-    const membership = await Membership.find();
-    if (!membership) {
-      return res
-        .status(404)
-        .json({ message: "Membership not found", status: false });
-    }
-    res
-      .status(200)
-      .json({
-        message: "Membership fetched successfully",
-        status: true,
-        membership,
+    const userId = req.user.id;
+
+    // Fetch user with populated membership
+    const user = await User.findById(userId)
+      .populate("membership.membershipId")
+      .select("membership");
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+        status: false,
       });
+    }
+
+    // Fetch all memberships
+    const memberships = await Membership.find();
+
+    res.status(200).json({
+      message: "Membership fetched successfully",
+      status: true,
+      memberships,
+      userMembership: user.membership,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -986,13 +1014,17 @@ export const buyMembership = async (req, res) => {
     const { membershipId } = req.body;
 
     if (!membershipId) {
-      return res.status(400).json({ message: "Missing required fields", status: false });
+      return res
+        .status(400)
+        .json({ message: "Missing required fields", status: false });
     }
 
     // Fetch membership plan
     const membership = await Membership.findById(membershipId);
     if (!membership) {
-      return res.status(404).json({ message: "Membership plan not found", status: false });
+      return res
+        .status(404)
+        .json({ message: "Membership plan not found", status: false });
     }
 
     // Fetch user
@@ -1015,7 +1047,11 @@ export const buyMembership = async (req, res) => {
 
       return res
         .status(400)
-        .json({ message: "You already have an active membership.", status: false, membership: user.membership });
+        .json({
+          message: "You already have an active membership.",
+          status: false,
+          membership: user.membership,
+        });
     }
 
     // Check if the user has enough balance in the wallet
@@ -1077,7 +1113,6 @@ export const buyMembership = async (req, res) => {
   }
 };
 
-
 export const getWalletWithTransactions = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1101,5 +1136,62 @@ export const getWalletWithTransactions = async (req, res) => {
   } catch (error) {
     console.error("Error in getWalletWithTransactions:", error);
     res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getAllReligions = async (req, res) => {
+  try {
+    const religions = await Religion.find().select(
+      "_id religionName communities"
+    );
+
+    res.status(200).json({
+      status: true,
+      message: "Religions fetched successfully",
+      data: religions,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: false,
+      message: "Error fetching religions",
+      error: error.message,
+    });
+  }
+};
+
+export const getAllCommunitiesByReligion = async (req, res) => {
+  try {
+    const { religionId } = req.query;
+
+    if (!religionId) {
+      return res.status(400).json({
+        status: false,
+        message: "Religion ID is required",
+      });
+    }
+
+    const religion = await Religion.findById(religionId).select(
+      "communities name"
+    );
+
+    if (!religion) {
+      return res.status(404).json({
+        status: false,
+        message: "Religion not found",
+      });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "Communities fetched successfully",
+      religionName: religion.name,
+      data: religion.communities,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: false,
+      message: "Error fetching communities",
+      error: error.message,
+    });
   }
 };
