@@ -60,7 +60,7 @@ const userSchema = new mongoose.Schema(
       endDate: { type: Date },
       membershipId: { type: mongoose.Schema.Types.ObjectId, ref: "Membership" },
     },
-    referralId: { type: String, unique: true },
+    referralId: { type: String },
     referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     fcmToken: { type: String },
     religionId: { type: mongoose.Schema.Types.ObjectId, ref: "Religion" },
