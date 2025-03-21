@@ -15,6 +15,7 @@ import Feedback from "../models/Feedback.js";
 import Contact from "../models/Contact.js";
 import { sendNotification } from "../utils/notification.js";
 import SuccessStory from "../models/SuccessStory.js";
+import geolib from "geolib";
 
 const generateJwtToken = (user) => {
   return jwt.sign(
@@ -35,10 +36,11 @@ const generateTransactionId = () => {
   const formattedId = `PJ${randomString.match(/.{1,2}/g).join("")}`; // PJ + split into 2-char groups
   return formattedId;
 };
+
 export const generateOtp = async (req, res) => {
   try {
-    const { mobileNumber, countryCode, email } = req.body;
-    if (!mobileNumber || !countryCode || !email) {
+    const { mobileNumber, countryCode } = req.body;
+    if (!mobileNumber || !countryCode) {
       return res.status(400).json({
         message: "mobileNumber,countryCode,email is required",
         status: false,
@@ -57,7 +59,6 @@ export const generateOtp = async (req, res) => {
       user = new User({
         mobileNumber,
         countryCode,
-        email,
         otp: generatedOtp,
         otpExpiresAt,
       });
@@ -155,7 +156,7 @@ export const resendOtp = async (req, res) => {
 export const completeRegistration = async (req, res) => {
   try {
     const {
-      email,
+      userEmail,
       age,
       firstName,
       lastName,
@@ -232,7 +233,7 @@ export const completeRegistration = async (req, res) => {
       !firstName ||
       !lastName ||
       !password ||
-      !email ||
+      !userEmail ||
       !mobileNumber ||
       !profileFor
     ) {
@@ -251,7 +252,7 @@ export const completeRegistration = async (req, res) => {
     Object.assign(user, {
       profileFor,
       age,
-      email,
+      userEmail,
       firstName,
       lastName,
       gender,
@@ -376,31 +377,38 @@ export const login = async (req, res) => {
     }
 
     // Check admin verification status
-    if (!user.adminVerify) {
-      if (user.fcmToken) {
-        // Send notification if not admin verified
-        await sendNotification(
-          user.fcmToken,
-          "Verification Pending",
-          "Your profile is not verified yet. Please wait for admin approval."
-        );
-      }
+    // if (!user.adminVerify) {
+    //   if (user.fcmToken) {
+    //     // Send notification if not admin verified
+    //     await sendNotification(
+    //       user.fcmToken,
+    //       "Verification Pending",
+    //       "Your profile is not verified yet. Please wait for admin approval."
+    //     );
+    //   }
 
-      return res.status(403).json({
-        message:
-          "Your profile is not verified yet. Please wait for admin approval.",
-        status: false,
-      });
-    }
+    //   return res.status(403).json({
+    //     message:
+    //       "Your profile is not verified yet. Please wait for admin approval.",
+    //     status: false,
+    //   });
+    // }
 
     // Generate JWT token
     const token = generateJwtToken(user);
 
+    const hasMembership = !!(user.membership && user.membership.membershipId);
+
+
     res.status(200).json({
       message: "Login successful",
       status: true,
-      data: user,
+      data: {
+        ...user.toObject(),
+        hasMembership: hasMembership,
+      },
       token: token,
+
     });
   } catch (error) {
     console.error("Error in login:", error);
@@ -412,7 +420,7 @@ export const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
     const {
-      email,
+      userEmail,
       age,
       firstName,
       lastName,
@@ -446,7 +454,7 @@ export const updateProfile = async (req, res) => {
     }
 
     // Update fields
-    if (email) user.email = email;
+    if (userEmail) user.userEmail = userEmail;
     if (age) user.age = age;
     if (firstName) user.firstName = firstName;
     if (lastName) user.lastName = lastName;
@@ -877,7 +885,6 @@ export const getAllProfiles = async (req, res) => {
 
     let profiles = await User.find({
       isVerified: true,
-      religion: userReligion,
       _id: { $ne: userId },
     })
       .select("-otp -otpExpiresAt -password")
