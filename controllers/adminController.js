@@ -5,6 +5,10 @@ import Membership from "../models/Membership.js";
 import { stat } from "fs";
 import Religion from "../models/Religion.js";
 import Referral from "../models/Referral.js";
+import User from "../models/User.js";
+import Contact from "../models/Contact.js";
+import Feedback from "../models/Feedback.js";
+import SuccessStory from "../models/SuccessStory.js";
 
 
 export const addBanner = async (req, res) => {
@@ -286,5 +290,190 @@ export const addReferral = async (req, res) => {
     res
       .status(500)
       .json({ message: "Internal Server Error", error: error.message });
+  }
+};
+
+export const getAllUsers = async (req, res) => {
+  try {
+    const { search, page = 1, limit = 10 } = req.query;
+
+    // Pagination setup
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // Build search query
+    let query = {};
+    if (search) {
+      query = {
+        $or: [
+          { name: { $regex: search, $options: "i" } },
+          { email: { $regex: search, $options: "i" } },
+          { mobileNumber: { $regex: search, $options: "i" } },
+        ],
+      };
+    }
+
+    // Fetch users with pagination and search
+    const users = await User.find(query)
+      .skip(skip)
+      .limit(limitNumber)
+      .sort({ createdAt: -1 });
+
+    // Get total count for pagination
+    const totalUsers = await User.countDocuments(query);
+
+    res.status(200).json({
+      message: "Users fetched successfully",
+      status: true,
+      data: users,
+      totalUsers,
+      totalPages: Math.ceil(totalUsers / limitNumber),
+      currentPage: pageNumber,
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getContacts = async (req, res) => {
+  try {
+    const { search, page = 1, limit = 10 } = req.query;
+
+    // Pagination setup
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // Build search query
+    let query = {};
+    if (search) {
+      query = {
+        $or: [
+          { name: { $regex: search, $options: "i" } },
+          { email: { $regex: search, $options: "i" } },
+          { mobileNumber: { $regex: search, $options: "i" } },
+        ],
+      };
+    }
+
+    // Fetch contacts with pagination and search
+    const contacts = await Contact.find(query)
+      .skip(skip)
+      .limit(limitNumber)
+      .sort({ createdAt: -1 });
+
+    // Get total count for pagination
+    const totalContacts = await Contact.countDocuments(query);
+
+    res.status(200).json({
+      status: true,
+      contacts,
+      totalContacts,
+      totalPages: Math.ceil(totalContacts / limitNumber),
+      currentPage: pageNumber,
+    });
+  } catch (error) {
+    console.error("Error in getContacts:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const addOrUpdateContact = async (req, res) => {
+  try {
+    const { name, email, mobile } = req.body;
+
+    // Find existing contact for the user
+    let contact = await Contact.findOne();
+
+    if (contact) {
+      // Update the existing contact
+      contact.name = name;
+      contact.email = email;
+      contact.mobile = mobile;
+      await contact.save();
+
+      res.status(200).json({
+        message: "Contact updated successfully",
+        status: true,
+        contact,
+      });
+    } else {
+      // Create a new contact
+      const newContact = new Contact({
+        name,
+        email,
+        mobile,
+      });
+      await newContact.save();
+
+      res.status(201).json({
+        message: "Contact added successfully",
+        status: true,
+        contact: newContact,
+      });
+    }
+  } catch (error) {
+    console.error("Error in addOrUpdateContact:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const addSuccessStory = async (req, res) => {
+  try {
+    const { name, date, description, partnerId, userId } = req.body;
+    const image = req.file ? req.file.path : "";
+
+    const newSuccessStory = new SuccessStory({
+      userId,
+      name,
+      date,
+      description,
+      image,
+      partnerId,
+    });
+
+    await newSuccessStory.save();
+
+    res.status(201).json({
+      message: "SuccessStory added successfully",
+      status: true,
+      successStory: newSuccessStory,
+    });
+  } catch (error) {
+    console.error("Error in addFeedback:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getSuccessStories = async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+
+    // Pagination setup
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // Fetch feedbacks with pagination
+    const feedbacks = await Feedback.find()
+      .skip(skip)
+      .limit(limitNumber)
+      .sort({ createdAt: -1 });
+
+    // Get total count for pagination
+    const totalFeedbacks = await Feedback.countDocuments();
+
+    res.status(200).json({
+      status: true,
+      feedbacks,
+      totalFeedbacks,
+      totalPages: Math.ceil(totalFeedbacks / limitNumber),
+      currentPage: pageNumber,
+    });
+  } catch (error) {
+    console.error("Error in getFeedbacks:", error);
+    res.status(500).json({ message: "Server Error", status: false });
   }
 };

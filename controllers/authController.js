@@ -11,6 +11,10 @@ import { stat } from "fs";
 import crypto from "crypto";
 import Transaction from "../models/Transaction.js";
 import Religion from "../models/Religion.js";
+import Feedback from "../models/Feedback.js";
+import Contact from "../models/Contact.js";
+import { sendNotification } from "../utils/notification.js";
+import SuccessStory from "../models/SuccessStory.js";
 
 const generateJwtToken = (user) => {
   return jwt.sign(
@@ -19,7 +23,6 @@ const generateJwtToken = (user) => {
     { expiresIn: "7d" }
   );
 };
-
 const generateFourDigitOtp = () => {
   return Math.floor(1000 + Math.random() * 9000).toString(); // Generates a random 4-digit number
 };
@@ -27,7 +30,6 @@ const generateReferralId = () => {
   const uniquePart = crypto.randomBytes(3).toString("hex").toUpperCase(); // Random 6 characters
   return `PJ${uniquePart}`;
 };
-
 const generateTransactionId = () => {
   const randomString = crypto.randomBytes(5).toString("hex").toUpperCase(); // 10 characters
   const formattedId = `PJ${randomString.match(/.{1,2}/g).join("")}`; // PJ + split into 2-char groups
@@ -278,8 +280,8 @@ export const completeRegistration = async (req, res) => {
       longitude,
       referralId,
       referredBy: referrer ? referrer._id : null,
-      religion: religionId,
-      community: communityId,
+      religionId: religionId,
+      communityId: communityId,
     });
 
     await user.save();
@@ -369,8 +371,26 @@ export const login = async (req, res) => {
 
     // Update FCM Token if provided
     if (fcmToken) {
-      user.firebaseToken = fcmToken;
+      user.fcmToken = fcmToken;
       await user.save();
+    }
+
+    // Check admin verification status
+    if (!user.adminVerify) {
+      if (user.fcmToken) {
+        // Send notification if not admin verified
+        await sendNotification(
+          user.fcmToken,
+          "Verification Pending",
+          "Your profile is not verified yet. Please wait for admin approval."
+        );
+      }
+
+      return res.status(403).json({
+        message:
+          "Your profile is not verified yet. Please wait for admin approval.",
+        status: false,
+      });
     }
 
     // Generate JWT token
@@ -469,25 +489,30 @@ export const getUserById = async (req, res) => {
     const userId = req.user.id;
 
     let user = await User.findById(userId)
-      .populate("religion", "religionName")
-      .populate("community", "name")
+      .populate("religionId", "religionName")
+      .populate("communityId", "name")
       .select("-otp -otpExpiresAt");
 
     if (!user) {
       return res.status(404).json({ message: "User not found", status: false });
     }
 
+    // Check for valid membership
+    const hasMembership = !!(user.membership && user.membership.membershipId);
+
     res.status(200).json({
       message: "User fetched successfully",
       status: true,
-      data: user,
+      data: {
+        ...user.toObject(),
+        hasMembership: hasMembership,
+      },
     });
   } catch (error) {
     console.error("Error in getUserById:", error);
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
-
 
 export const generateForgotPasswordOtp = async (req, res) => {
   try {
@@ -1045,13 +1070,11 @@ export const buyMembership = async (req, res) => {
         membership: user.membership,
       });
 
-      return res
-        .status(400)
-        .json({
-          message: "You already have an active membership.",
-          status: false,
-          membership: user.membership,
-        });
+      return res.status(400).json({
+        message: "You already have an active membership.",
+        status: false,
+        membership: user.membership,
+      });
     }
 
     // Check if the user has enough balance in the wallet
@@ -1195,3 +1218,128 @@ export const getAllCommunitiesByReligion = async (req, res) => {
     });
   }
 };
+
+export const searchProfiles = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { search } = req.query;
+
+    // Return empty response if no search parameter is provided
+    if (!search) {
+      return res.status(200).json({
+        status: true,
+        profiles: [],
+      });
+    }
+
+    const loggedInUser = await User.findById(userId).select("likes");
+    if (!loggedInUser) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    const likedProfiles = loggedInUser.likes.map((id) => String(id));
+
+    const filters = {
+      isVerified: true,
+      _id: { $ne: userId },
+      $or: [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { city: { $regex: search, $options: "i" } },
+        { religion: { $regex: search, $options: "i" } },
+        { community: { $regex: search, $options: "i" } },
+        { gender: { $regex: search, $options: "i" } },
+        { mobileNumber: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ],
+    };
+
+    let profiles = await User.find(filters)
+      .select("-otp -otpExpiresAt -password")
+      .lean();
+
+    profiles = profiles.map((profile) => ({
+      ...profile,
+      isLiked: likedProfiles.includes(String(profile._id)),
+      likeCount: profile.likes.length,
+    }));
+
+    res.status(200).json({
+      status: true,
+      profiles,
+    });
+  } catch (error) {
+    console.error("Error in searchProfiles:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const addFeedback = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { rating, description } = req.body;
+
+    const newFeedback = new Feedback({
+      userId,
+      rating,
+      description,
+    });
+
+    await newFeedback.save();
+
+    res.status(201).json({
+      message: "Feedback added successfully",
+      status: true,
+      feedback: newFeedback,
+    });
+  } catch (error) {
+    console.error("Error in addFeedback:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getFeedbacks = async (req, res) => {
+  try {
+    const feedbacks = await Feedback.find()
+      .populate("userId", "firstName lastName email")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      status: true,
+      message: "Feedbacks fetched successfully",
+      feedbacks,
+    });
+  } catch (error) {
+    console.error("Error in getFeedbacks:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getContacts = async (req, res) => {
+  try {
+    const contacts = await Contact.find().sort({ createdAt: -1 });
+
+    res.status(200).json({
+      status: true,
+      contacts,
+    });
+  } catch (error) {
+    console.error("Error in getContacts:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getSuccessStories = async (req, res) => {
+  try {
+    const successStories = await SuccessStory.find().sort({ createdAt: -1 });
+    res.status(200).json({
+      status: true,
+      message: "Success stories fetched successfully",
+      successStories,
+    });
+  } catch (error) {
+    console.error("Error in getSuccessStories:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+

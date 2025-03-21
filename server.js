@@ -5,6 +5,8 @@ import connectDB from "./config/db.js";
 import userRoutes from "./routes/userRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import path from "path";
+import admin from "firebase-admin";
+
 
 dotenv.config();
 const app = express();
@@ -15,6 +17,13 @@ connectDB();
 // Make uploads folder publicly accessible
 const __dirname = path.resolve();
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Initialize Firebase
+const serviceAccount = path.join(__dirname, "perfect-jodi-firebase.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 app.use("/api/user", userRoutes);
 app.use("/api/admin", adminRoutes);

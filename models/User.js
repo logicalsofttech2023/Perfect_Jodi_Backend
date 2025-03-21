@@ -63,8 +63,8 @@ const userSchema = new mongoose.Schema(
     referralId: { type: String, unique: true },
     referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     fcmToken: { type: String },
-    religion: { type: mongoose.Schema.Types.ObjectId, ref: "Religion" }, // Religion ID
-    community: { type: mongoose.Schema.Types.ObjectId },
+    religionId: { type: mongoose.Schema.Types.ObjectId, ref: "Religion" },
+    communityId: { type: mongoose.Schema.Types.ObjectId },
   },
   { timestamps: true }
 );

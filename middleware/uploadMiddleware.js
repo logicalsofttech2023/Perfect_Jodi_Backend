@@ -20,6 +20,8 @@ const bannerStorage = multer.diskStorage({
     }
 });
 
+
+
 // File filter for all image formats
 const fileFilter = (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp|bmp|tiff/;
