@@ -29,7 +29,8 @@ import {
   addFeedback,
   getFeedbacks,
   getContacts,
-  getSuccessStories
+  getSuccessStories,
+  getAllNotificationsById,
 } from "../controllers/authController.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 import { uploadProfile } from "../middleware/uploadMiddleware.js";
@@ -92,6 +93,7 @@ router.post("/addFeedback", authMiddleware, addFeedback);
 router.get("/getFeedbacks", getFeedbacks);
 router.get("/getContacts", getContacts);
 router.get("/getSuccessStories", getSuccessStories);
+router.get("/getAllNotificationsById", authMiddleware, getAllNotificationsById);
 
 
 

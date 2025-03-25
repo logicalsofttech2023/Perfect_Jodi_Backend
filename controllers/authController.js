@@ -16,6 +16,8 @@ import Contact from "../models/Contact.js";
 import { sendNotification } from "../utils/notification.js";
 import SuccessStory from "../models/SuccessStory.js";
 import geolib from "geolib";
+import { addNotification } from "../utils/AddNotification.js";
+import Notification from "../models/Notification.js";
 
 const generateJwtToken = (user) => {
   return jwt.sign(
@@ -285,12 +287,20 @@ export const completeRegistration = async (req, res) => {
       communityId: communityId,
     });
 
-    await user.save();
-    res.status(200).json({
-      message: "User registration completed successfully",
-      status: true,
-      data: user,
-    });
+    const newUser = await user.save();
+    if (newUser) {
+      const token = generateJwtToken(newUser);
+      const hasMembership = false;
+      res.status(200).json({
+        message: "User registration completed successfully",
+        status: true,
+        data: {
+          ...user.toObject(),
+          hasMembership: hasMembership,
+        },
+        token,
+      });
+    }
   } catch (error) {
     console.error("Error in completeRegistration:", error);
     res.status(500).json({ message: "Server Error", status: false });
@@ -377,7 +387,7 @@ export const login = async (req, res) => {
     }
 
     // Check admin verification status
-    // if (!user.adminVerify) {
+    // if (user.adminVerify) {
     //   if (user.fcmToken) {
     //     // Send notification if not admin verified
     //     await sendNotification(
@@ -399,7 +409,6 @@ export const login = async (req, res) => {
 
     const hasMembership = !!(user.membership && user.membership.membershipId);
 
-
     res.status(200).json({
       message: "Login successful",
       status: true,
@@ -408,7 +417,6 @@ export const login = async (req, res) => {
         hasMembership: hasMembership,
       },
       token: token,
-
     });
   } catch (error) {
     console.error("Error in login:", error);
@@ -496,14 +504,28 @@ export const getUserById = async (req, res) => {
   try {
     const userId = req.user.id;
 
+    // Populate religionId to get communities, but only select what's needed
     let user = await User.findById(userId)
-      .populate("religionId", "religionName")
-      .populate("communityId", "name")
+      .populate({
+        path: "religionId",
+        select: "religionName communities",
+      })
       .select("-otp -otpExpiresAt");
 
     if (!user) {
       return res.status(404).json({ message: "User not found", status: false });
     }
+
+    // Extract the community based on communityId
+    const community = user.religionId?.communities.find(
+      (c) => c._id.toString() === user.communityId?.toString()
+    );
+
+    // Remove the full communities list from the response
+    const religionData = {
+      _id: user.religionId._id,
+      religionName: user.religionId.religionName,
+    };
 
     // Check for valid membership
     const hasMembership = !!(user.membership && user.membership.membershipId);
@@ -514,6 +536,10 @@ export const getUserById = async (req, res) => {
       data: {
         ...user.toObject(),
         hasMembership: hasMembership,
+        religionId: religionData, // Send religion only
+        community: community
+          ? { _id: community._id, name: community.name }
+          : null,
       },
     });
   } catch (error) {
@@ -784,6 +810,18 @@ export const addMoneyToWallet = async (req, res) => {
 
     await transaction.save();
 
+    // 🛎️ Send notification
+    const title = "Wallet Amount Added";
+    const body = `₹${amount} has been added to your wallet. Your new balance is ₹${user.wallet}.`;
+
+    // 💾 Add notification to DB
+    await addNotification(userId, title, body);
+
+    // 📲 Send push notification if token exists
+    if (user.fcmToken) {
+      await sendNotification(user.fcmToken, title, body);
+    }
+
     res.status(200).json({
       message: `₹${amount} added to wallet successfully`,
       status: true,
@@ -813,32 +851,57 @@ export const likeProfile = async (req, res) => {
         .json({ message: "You cannot like your own profile", status: false });
     }
 
-    let profile = await User.findById(userId);
+    // Find the user who is liking the profile
+    let user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    // Ensure likes is an array
+    if (!Array.isArray(user.likes)) {
+      user.likes = [];
+    }
+
+    // Find the profile being liked/unliked
+    const profile = await User.findById(profileId);
     if (!profile) {
       return res
         .status(404)
         .json({ message: "Profile not found", status: false });
     }
 
-    // Check if user has already liked the profile
-    const likeIndex = profile.likes.indexOf(profileId);
+    // Check if already liked
+    const likeIndex = user.likes.indexOf(profileId);
+    let message = "";
 
     if (likeIndex === -1) {
-      // If user has NOT liked the profile, add like
-      profile.likes.push(profileId);
-      var message = "Profile liked successfully";
+      // Like profile
+      user.likes.push(profileId);
+      message = "Profile liked successfully";
+
+      // 🛎️ Send notification only on LIKE
+      const title = "New Like!";
+      const body = `${user.firstName} ${user.lastName} liked your profile.`;
+
+      // 💾 Add notification to DB
+      await addNotification(profileId, title, body);
+
+      // 📲 Send push notification if token exists
+      if (profile.fcmToken) {
+        await sendNotification(profile.fcmToken, title, body);
+      }
     } else {
-      // If user has already liked, remove like (Unlike feature)
-      profile.likes.splice(likeIndex, 1);
-      var message = "Profile unlike successfully";
+      // Unlike profile
+      user.likes.splice(likeIndex, 1);
+      message = "Profile unliked successfully";
     }
 
-    await profile.save();
+    await user.save();
 
     res.status(200).json({
       message,
       status: true,
-      likeCount: profile.likes.length,
+      likeCount: user.likes.length,
     });
   } catch (error) {
     console.error("Error in likeProfile:", error);
@@ -850,20 +913,44 @@ export const getAllLikedProfiles = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Find the user and populate the liked profiles
-    const user = await User.findById(userId).populate(
-      "likes",
-      "-password -otp"
-    );
+    // Find the user and populate the liked profiles with religionId
+    const user = await User.findById(userId).populate({
+      path: "likes",
+      populate: {
+        path: "religionId",
+        select: "religionName communities",
+      },
+      select: "-password -otp -otpExpiresAt",
+    });
 
     if (!user) {
       return res.status(404).json({ message: "User not found", status: false });
     }
 
+    const likedProfiles = user.likes.map((profile) => {
+      const community = profile.religionId?.communities.find(
+        (c) => c._id.toString() === profile.communityId?.toString()
+      );
+
+      const religionData = {
+        _id: profile.religionId?._id,
+        religionName: profile.religionId?.religionName,
+      };
+
+      return {
+        ...profile.toObject(),
+        religionId: religionData,
+        community: community
+          ? { _id: community._id, name: community.name }
+          : null,
+        likeCount: profile.likes.length,
+      };
+    });
+
     res.status(200).json({
       message: "Liked profiles fetched successfully",
       status: true,
-      likedProfiles: user.likes,
+      likedProfiles,
     });
   } catch (error) {
     console.error("Error in getAllLikedProfiles:", error);
@@ -875,26 +962,51 @@ export const getAllProfiles = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const loggedInUser = await User.findById(userId).select("religion likes");
+    const loggedInUser = await User.findById(userId).select(
+      "religionId likes gender"
+    );
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found", status: false });
     }
 
-    const userReligion = loggedInUser.religion;
+    const userReligion = loggedInUser.religionId;
     const likedProfiles = loggedInUser.likes.map((id) => String(id));
+    const genderPreference = loggedInUser.gender === "Male" ? "Female" : "Male";
 
     let profiles = await User.find({
       isVerified: true,
+      adminVerify: true,
       _id: { $ne: userId },
+      gender: genderPreference,
+      religionId: userReligion,
     })
+      .populate({
+        path: "religionId",
+        select: "religionName communities",
+      })
       .select("-otp -otpExpiresAt -password")
       .lean();
 
-    profiles = profiles.map((profile) => ({
-      ...profile,
-      isLiked: likedProfiles.includes(String(profile._id)),
-      likeCount: profile.likes.length,
-    }));
+    profiles = profiles.map((profile) => {
+      const community = profile.religionId?.communities.find(
+        (c) => c._id.toString() === profile.communityId?.toString()
+      );
+
+      const religionData = {
+        _id: profile.religionId?._id,
+        religionName: profile.religionId?.religionName,
+      };
+
+      return {
+        ...profile,
+        isLiked: likedProfiles.includes(String(profile._id)),
+        likeCount: profile.likes.length,
+        religionId: religionData,
+        community: community
+          ? { _id: community._id, name: community.name }
+          : null,
+      };
+    });
 
     res.status(200).json({
       status: true,
@@ -911,33 +1023,42 @@ export const getAllNearProfiles = async (req, res) => {
     const { latitude, longitude } = req.query;
     const userId = req.user.id;
 
-    const loggedInUser = await User.findById(userId).select("religion likes");
-    if (!loggedInUser) {
-      return res.status(404).json({ message: "User not found", status: false });
-    }
-
-    const { religion, likes } = loggedInUser;
-
     if (!latitude || !longitude) {
       return res
         .status(400)
         .json({ message: "Location not set", status: false });
     }
 
+    const loggedInUser = await User.findById(userId).select(
+      "religionId likes gender"
+    );
+    if (!loggedInUser) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    const userReligion = loggedInUser.religionId;
+    const likedProfiles = loggedInUser.likes.map((id) => String(id));
+    const genderPreference = loggedInUser.gender === "Male" ? "Female" : "Male";
+
     let profiles = await User.find({
       isVerified: true,
-      religion: religion,
+      adminVerify: true,
       _id: { $ne: userId },
+      gender: genderPreference,
+      religionId: userReligion,
     })
+      .populate({
+        path: "religionId",
+        select: "religionName communities",
+      })
       .select("-otp -otpExpiresAt -password")
       .lean();
-
-    const likedProfiles = likes.map((id) => String(id));
 
     profiles = profiles
       .filter((profile) => {
         if (!profile.latitude || !profile.longitude) return false;
 
+        // Check if profile is within 30 km radius
         return geolib.isPointWithinRadius(
           { latitude: parseFloat(latitude), longitude: parseFloat(longitude) },
           {
@@ -947,11 +1068,26 @@ export const getAllNearProfiles = async (req, res) => {
           30000 // 30 km radius
         );
       })
-      .map((profile) => ({
-        ...profile,
-        isLiked: likedProfiles.includes(String(profile._id)),
-        likeCount: profile.likes.length,
-      }));
+      .map((profile) => {
+        const community = profile.religionId?.communities.find(
+          (c) => c._id.toString() === profile.communityId?.toString()
+        );
+
+        const religionData = {
+          _id: profile.religionId?._id,
+          religionName: profile.religionId?.religionName,
+        };
+
+        return {
+          ...profile,
+          isLiked: likedProfiles.includes(String(profile._id)),
+          likeCount: profile.likes.length,
+          religionId: religionData,
+          community: community
+            ? { _id: community._id, name: community.name }
+            : null,
+        };
+      });
 
     res.status(200).json({
       status: true,
@@ -1131,6 +1267,18 @@ export const buyMembership = async (req, res) => {
 
     await transaction.save();
 
+    // 🛎️ Send notification
+    const title = "Membership Purchased";
+    const body = `You have successfully purchased a ${membership.planType} membership.`;
+
+    // 💾 Add notification to DB
+    await addNotification(userId, title, body);
+
+    // 📲 Send push notification if token exists
+    if (user.fcmToken) {
+      await sendNotification(user.fcmToken, title, body);
+    }
+
     res.status(201).json({
       message: "Membership purchased successfully",
       walletBalance: user.wallet,
@@ -1226,55 +1374,210 @@ export const getAllCommunitiesByReligion = async (req, res) => {
   }
 };
 
+// export const searchProfiles = async (req, res) => {
+//   try {
+//     console.log("Incoming Request Query:", req.query);
+//     const userId = req.user.id;
+//     const { search, minAge, maxAge, communityId } = req.query;
+
+//     if (!search && !minAge && !maxAge) {
+//       console.log("No search parameters provided.");
+//       return res.status(200).json({
+//         status: true,
+//         profiles: [],
+//       });
+//     }
+
+//     const loggedInUser = await User.findById(userId).select(
+//       "religionId likes gender"
+//     );
+//     if (!loggedInUser) {
+//       console.log("User not found with ID:", userId);
+//       return res.status(404).json({ message: "User not found", status: false });
+//     }
+
+//     const likedProfiles = loggedInUser.likes.map((id) => String(id));
+//     const userReligion = loggedInUser.religionId;
+//     const genderPreference = loggedInUser.gender === "Male" ? "Female" : "Male";
+
+//     console.log("Logged In User Details:", { userReligion, genderPreference });
+
+//     let communityFilter = {};
+//     if (mongoose.Types.ObjectId.isValid(communityId)) {
+//       communityFilter = {
+//         communityId: new mongoose.Types.ObjectId(communityId),
+//       };
+//     }
+
+//     const orConditions = [];
+//     if (search) {
+//       orConditions.push(
+//         { firstName: { $regex: search, $options: "i" } },
+//         { lastName: { $regex: search, $options: "i" } },
+//         { city: { $regex: search, $options: "i" } },
+//         { mobileNumber: { $regex: search, $options: "i" } },
+//         { userEmail: { $regex: search, $options: "i" } }
+//       );
+//     }
+
+//     const filters = {
+//       isVerified: true,
+//       adminVerify: true,
+//       _id: { $ne: userId },
+//       gender: genderPreference,
+//       religionId: userReligion,
+//       ...(Object.keys(communityFilter).length > 0 && communityFilter),
+//       ...(orConditions.length > 0 && { $or: orConditions }),
+//     };
+
+//     // Apply age filter only if minAge and maxAge are provided
+//     if (minAge && maxAge) {
+//       filters.$expr = {
+//         $and: [
+//           { $gte: [{ $toInt: "$age" }, parseInt(minAge)] },
+//           { $lte: [{ $toInt: "$age" }, parseInt(maxAge)] },
+//         ],
+//       };
+//     }
+
+//     console.log("Filters Applied:", JSON.stringify(filters, null, 2));
+
+//     let profiles = await User.find(filters)
+//       .populate({
+//         path: "religionId",
+//         select: "religionName communities",
+//       })
+//       .select("-otp -otpExpiresAt -password")
+//       .lean();
+
+//     console.log("Profiles Found:", profiles.length);
+
+//     profiles = profiles.map((profile) => {
+//       const community = profile.religionId?.communities.find(
+//         (c) => c._id.toString() === profile.communityId?.toString()
+//       );
+
+//       const religionData = {
+//         _id: profile.religionId?._id,
+//         religionName: profile.religionId?.religionName,
+//       };
+
+//       return {
+//         ...profile,
+//         isLiked: likedProfiles.includes(String(profile._id)),
+//         likeCount: profile.likes.length,
+//         religionId: religionData,
+//         community: community
+//           ? { _id: community._id, name: community.name }
+//           : null,
+//       };
+//     });
+
+//     console.log("Final Profiles Data:", JSON.stringify(profiles, null, 2));
+
+//     res.status(200).json({
+//       status: true,
+//       profiles,
+//     });
+//   } catch (error) {
+//     console.error("Error in searchProfiles:", error);
+//     res.status(500).json({ message: "Server Error", status: false });
+//   }
+// };
+
+
 export const searchProfiles = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { search } = req.query;
+    const { search, minAge, maxAge, communityId, latitude, longitude, radius } = req.query;
 
-    // Return empty response if no search parameter is provided
-    if (!search) {
-      return res.status(200).json({
-        status: true,
-        profiles: [],
-      });
-    }
-
-    const loggedInUser = await User.findById(userId).select("likes");
+    const loggedInUser = await User.findById(userId).select(
+      "religionId likes gender"
+    );
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found", status: false });
     }
 
     const likedProfiles = loggedInUser.likes.map((id) => String(id));
+    const userReligion = loggedInUser.religionId;
+    const genderPreference = loggedInUser.gender === "Male" ? "Female" : "Male";
 
-    const filters = {
+    let filters = {
       isVerified: true,
+      adminVerify: true,
       _id: { $ne: userId },
-      $or: [
+      gender: genderPreference,
+      religionId: userReligion,
+    };
+
+    // Community Filter
+    if (mongoose.Types.ObjectId.isValid(communityId)) {
+      filters.communityId = new mongoose.Types.ObjectId(communityId);
+    }
+
+    // Search Filters
+    if (search) {
+      filters.$or = [
         { firstName: { $regex: search, $options: "i" } },
         { lastName: { $regex: search, $options: "i" } },
         { city: { $regex: search, $options: "i" } },
-        { religion: { $regex: search, $options: "i" } },
-        { community: { $regex: search, $options: "i" } },
-        { gender: { $regex: search, $options: "i" } },
         { mobileNumber: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
-      ],
-    };
+        { userEmail: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // Age Filters
+    if (minAge || maxAge) {
+      filters.$expr = { $and: [] };
+      if (minAge) {
+        filters.$expr.$and.push({ $gte: [{ $toInt: "$age" }, parseInt(minAge)] });
+      }
+      if (maxAge) {
+        filters.$expr.$and.push({ $lte: [{ $toInt: "$age" }, parseInt(maxAge)] });
+      }
+    }
+
 
     let profiles = await User.find(filters)
+      .populate({ path: "religionId", select: "religionName communities" })
       .select("-otp -otpExpiresAt -password")
       .lean();
 
-    profiles = profiles.map((profile) => ({
-      ...profile,
-      isLiked: likedProfiles.includes(String(profile._id)),
-      likeCount: profile.likes.length,
-    }));
+      // Apply Radius Filter
+    if (latitude && longitude && radius) {
+      profiles = profiles.filter((profile) => {
+        if (!profile.latitude || !profile.longitude) return false;
+        return geolib.isPointWithinRadius(
+          { latitude: parseFloat(latitude), longitude: parseFloat(longitude) },
+          {
+            latitude: parseFloat(profile.latitude),
+            longitude: parseFloat(profile.longitude),
+          },
+          parseInt(radius)
+        );
+      });
+    }
 
-    res.status(200).json({
-      status: true,
-      profiles,
+    profiles = profiles.map((profile) => {
+      const community = profile.religionId?.communities.find(
+        (c) => c._id.toString() === profile.communityId?.toString()
+      );
+
+      const religionData = {
+        _id: profile.religionId?._id,
+        religionName: profile.religionId?.religionName,
+      };
+
+      return {
+        ...profile,
+        isLiked: likedProfiles.includes(String(profile._id)),
+        likeCount: profile.likes.length,
+        religionId: religionData,
+        community: community ? { _id: community._id, name: community.name } : null,
+      };
     });
+
+    res.status(200).json({ status: true, profiles });
   } catch (error) {
     console.error("Error in searchProfiles:", error);
     res.status(500).json({ message: "Server Error", status: false });
@@ -1350,3 +1653,22 @@ export const getSuccessStories = async (req, res) => {
   }
 };
 
+export const getAllNotificationsById = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch all notifications for the user, sorted by latest first
+    const notifications = await Notification.find({ userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      message: "Notifications fetched successfully",
+      status: true,
+      notifications,
+    });
+  } catch (error) {
+    console.error("Error fetching notifications:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};

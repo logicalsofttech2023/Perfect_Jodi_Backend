@@ -1,7 +1,7 @@
 import admin from "firebase-admin";
 
-
 export const sendNotification = async (token, title, body) => {
+  
     const message = {
       token,
       notification: {

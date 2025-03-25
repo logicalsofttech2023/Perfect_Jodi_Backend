@@ -9,7 +9,10 @@ import User from "../models/User.js";
 import Contact from "../models/Contact.js";
 import Feedback from "../models/Feedback.js";
 import SuccessStory from "../models/SuccessStory.js";
-
+import { addNotification } from "../utils/AddNotification.js";
+import { sendNotification } from "../utils/notification.js";
+import Transaction from "../models/Transaction.js";
+import Notification from "../models/Notification.js";
 
 export const addBanner = async (req, res) => {
   try {
@@ -139,13 +142,11 @@ export const getAllMembership = async (req, res) => {
         .status(404)
         .json({ message: "Membership not found", status: false });
     }
-    res
-      .status(200)
-      .json({
-        message: "Membership fetched successfully",
-        status: true,
-        membership,
-      });
+    res.status(200).json({
+      message: "Membership fetched successfully",
+      status: true,
+      membership,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -179,11 +180,9 @@ export const addCommunity = async (req, res) => {
     const { religionId, communityNames } = req.body; // Expecting an array of names
 
     if (!Array.isArray(communityNames) || communityNames.length === 0) {
-      return res
-        .status(400)
-        .json({
-          message: "Community names should be an array with at least one value",
-        });
+      return res.status(400).json({
+        message: "Community names should be an array with at least one value",
+      });
     }
 
     const religion = await Religion.findById(religionId);
@@ -277,15 +276,19 @@ export const addReferral = async (req, res) => {
     const { referAmount } = req.body;
 
     if (!referAmount) {
-      return res.status(400).json({ message: "Refer amount is required", status: false });
+      return res
+        .status(400)
+        .json({ message: "Refer amount is required", status: false });
     }
 
     const newReferral = new Referral({ referAmount });
     await newReferral.save();
 
-    res
-      .status(201)
-      .json({ message: "Referral transaction added", status: true, referral: newReferral });
+    res.status(201).json({
+      message: "Referral transaction added",
+      status: true,
+      referral: newReferral,
+    });
   } catch (error) {
     res
       .status(500)
@@ -303,12 +306,15 @@ export const getAllUsers = async (req, res) => {
     const skip = (pageNumber - 1) * limitNumber;
 
     // Build search query
-    let query = {};
+    let query = {
+      firstName: { $exists: true, $ne: "" }, // Exclude users with no firstName or empty string
+    };
     if (search) {
       query = {
         $or: [
-          { name: { $regex: search, $options: "i" } },
-          { email: { $regex: search, $options: "i" } },
+          { firstName: { $regex: search, $options: "i" } },
+          { lastName: { $regex: search, $options: "i" } },
+          { userEmail: { $regex: search, $options: "i" } },
           { mobileNumber: { $regex: search, $options: "i" } },
         ],
       };
@@ -474,6 +480,254 @@ export const getSuccessStories = async (req, res) => {
     });
   } catch (error) {
     console.error("Error in getFeedbacks:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const updateUserVerification = async (req, res) => {
+  try {
+    const { userId, action } = req.body;
+
+    if (!userId || !["approve", "disapprove"].includes(action)) {
+      return res.status(400).json({
+        message:
+          "Invalid request. Provide userId and action (approve/disapprove).",
+        status: false,
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { adminVerify: action === "approve" },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    // 🛎️ Send notification
+    const title = `Profile ${
+      action === "approve" ? "Approved" : "Disapproved"
+    }`;
+    const body =
+      action === "approve"
+        ? "Your profile has been approved by the admin. You can now login."
+        : "Your profile has been disapproved by the admin. Please contact support for more details.";
+
+    // 💾 Add notification to DB
+    await addNotification(userId, title, body);
+
+    // 📲 Send push notification if token exists
+    if (updatedUser.fcmToken) {
+      await sendNotification(updatedUser.fcmToken, title, body);
+    }
+
+    res.status(200).json({
+      message: `User profile ${
+        action === "approve" ? "approved" : "disapproved"
+      } successfully`,
+      status: true,
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Error updating user verification:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getUserIdInAdmin = async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    // Populate religionId to get communities, but only select what's needed
+    let user = await User.findById(userId)
+      .populate({
+        path: "religionId",
+        select: "religionName communities",
+      })
+      .select("-otp -otpExpiresAt");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    // Extract the community based on communityId
+    const community = user.religionId?.communities.find(
+      (c) => c._id.toString() === user.communityId?.toString()
+    );
+
+    // Remove the full communities list from the response
+    const religionData = {
+      _id: user.religionId._id,
+      religionName: user.religionId.religionName,
+    };
+
+    // Check for valid membership
+    const hasMembership = !!(user.membership && user.membership.membershipId);
+
+    res.status(200).json({
+      message: "User fetched successfully",
+      status: true,
+      data: {
+        ...user.toObject(),
+        hasMembership: hasMembership,
+        religionId: religionData,
+        community: community
+          ? { _id: community._id, name: community.name }
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getUserById:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const dashboardData = async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
+    const totalFeedbacks = await Feedback.countDocuments();
+    const totalSuccessStories = await SuccessStory.countDocuments();
+    const totalTransaction = await Transaction.countDocuments();
+    const totalNotification = await Notification.countDocuments();
+
+    res.status(200).json({
+      status: true,
+      totalUsers,
+      totalFeedbacks,
+      totalSuccessStories,
+      totalTransaction,
+      totalNotification,
+    });
+  } catch (error) {
+    console.error("Error in dashboardData:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getAllFeedbackInAdmin = async (req, res) => {
+  try {
+    const { search, page = 1, limit = 10 } = req.query;
+
+    // Pagination setup
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // Build search query
+    let query = {};
+    if (search) {
+      query = {
+        $or: [
+          { userName: { $regex: search, $options: "i" } },
+          { feedbackText: { $regex: search, $options: "i" } },
+        ],
+      };
+    }
+
+    // Fetch feedback with pagination and search
+    const feedbacks = await Feedback.find(query)
+      .populate("userId")
+      .skip(skip)
+      .limit(limitNumber)
+      .sort({ createdAt: -1 });
+
+    // Get total count for pagination
+    const totalFeedbacks = await Feedback.countDocuments(query);
+
+    res.status(200).json({
+      message: "Feedback fetched successfully",
+      status: true,
+      data: feedbacks,
+      totalFeedbacks,
+      totalPages: Math.ceil(totalFeedbacks / limitNumber),
+      currentPage: pageNumber,
+    });
+  } catch (error) {
+    console.error("Error fetching feedback:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getMembershipInAdmin = async (req, res) => {
+  try {
+    const {userId} = req.query;
+
+    // Fetch user with populated membership
+    const user = await User.findById(userId)
+      .populate("membership.membershipId")
+      .select("membership");
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+        status: false,
+      });
+    }
+
+    res.status(200).json({
+      message: "Membership fetched successfully",
+      status: true,
+      userMembership: user.membership,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      status: false,
+      error: error.message,
+    });
+  }
+};
+
+export const getAllLikedProfilesInAdmin = async (req, res) => {
+  try {
+    const {userId} = req.query;
+
+    // Find the user and populate the liked profiles with religionId
+    const user = await User.findById(userId).populate({
+      path: "likes",
+      populate: {
+        path: "religionId",
+        select: "religionName communities",
+      },
+      select: "-password -otp -otpExpiresAt",
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    
+
+    const likedProfiles = user.likes.map((profile) => {
+      const community = profile.religionId?.communities.find(
+        (c) => c._id.toString() === profile.communityId?.toString()
+      );
+
+      const religionData = {
+        _id: profile.religionId?._id,
+        religionName: profile.religionId?.religionName,
+      };
+
+      return {
+        ...profile.toObject(),
+        religionId: religionData,
+        community: community
+          ? { _id: community._id, name: community.name }
+          : null,
+        likeCount: profile.likes.length,
+      };
+    });
+
+    res.status(200).json({
+      message: "Liked profiles fetched successfully",
+      status: true,
+      likedProfiles,
+    });
+  } catch (error) {
+    console.error("Error in getAllLikedProfiles:", error);
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
