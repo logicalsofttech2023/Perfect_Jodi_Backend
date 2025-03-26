@@ -814,12 +814,17 @@ export const addMoneyToWallet = async (req, res) => {
     const title = "Wallet Amount Added";
     const body = `₹${amount} has been added to your wallet. Your new balance is ₹${user.wallet}.`;
 
-    // 💾 Add notification to DB
-    await addNotification(userId, title, body);
+    try {
+      // 💾 Add notification to DB
+      await addNotification(userId, title, body);
 
-    // 📲 Send push notification if token exists
-    if (user.fcmToken) {
-      await sendNotification(user.fcmToken, title, body);
+      // 📲 Send push notification if token exists
+      if (user.fcmToken) {
+        await sendNotification(user.fcmToken, title, body);
+      }
+    } catch (notificationError) {
+      console.error("Notification Error:", notificationError);
+      // Notification fail hone par bhi success response bhej rahe hain
     }
 
     res.status(200).json({
@@ -1212,12 +1217,6 @@ export const buyMembership = async (req, res) => {
         status: false,
         membership: user.membership,
       });
-
-      return res.status(400).json({
-        message: "You already have an active membership.",
-        status: false,
-        membership: user.membership,
-      });
     }
 
     // Check if the user has enough balance in the wallet
@@ -1271,12 +1270,17 @@ export const buyMembership = async (req, res) => {
     const title = "Membership Purchased";
     const body = `You have successfully purchased a ${membership.planType} membership.`;
 
-    // 💾 Add notification to DB
-    await addNotification(userId, title, body);
+    try {
+      // 💾 Add notification to DB
+      await addNotification(userId, title, body);
 
-    // 📲 Send push notification if token exists
-    if (user.fcmToken) {
-      await sendNotification(user.fcmToken, title, body);
+      // 📲 Send push notification if token exists
+      if (user.fcmToken) {
+        await sendNotification(user.fcmToken, title, body);
+      }
+    } catch (notificationError) {
+      console.error("Notification Error:", notificationError);
+      // Notification fail hone par bhi success response bhej rahe hain
     }
 
     res.status(201).json({
@@ -1485,11 +1489,26 @@ export const getAllCommunitiesByReligion = async (req, res) => {
 //   }
 // };
 
-
 export const searchProfiles = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { search, minAge, maxAge, communityId, latitude, longitude, radius } = req.query;
+    const { search, minAge, maxAge, communityId, latitude, longitude, radius } =
+      req.query;
+
+    if (
+      !search &&
+      !minAge &&
+      !maxAge &&
+      !latitude &&
+      !longitude &&
+      !radius &&
+      !communityId
+    ) {
+      return res.status(200).json({
+        status: true,
+        profiles: [],
+      });
+    }
 
     const loggedInUser = await User.findById(userId).select(
       "religionId likes gender"
@@ -1530,20 +1549,23 @@ export const searchProfiles = async (req, res) => {
     if (minAge || maxAge) {
       filters.$expr = { $and: [] };
       if (minAge) {
-        filters.$expr.$and.push({ $gte: [{ $toInt: "$age" }, parseInt(minAge)] });
+        filters.$expr.$and.push({
+          $gte: [{ $toInt: "$age" }, parseInt(minAge)],
+        });
       }
       if (maxAge) {
-        filters.$expr.$and.push({ $lte: [{ $toInt: "$age" }, parseInt(maxAge)] });
+        filters.$expr.$and.push({
+          $lte: [{ $toInt: "$age" }, parseInt(maxAge)],
+        });
       }
     }
-
 
     let profiles = await User.find(filters)
       .populate({ path: "religionId", select: "religionName communities" })
       .select("-otp -otpExpiresAt -password")
       .lean();
 
-      // Apply Radius Filter
+    // Apply Radius Filter
     if (latitude && longitude && radius) {
       profiles = profiles.filter((profile) => {
         if (!profile.latitude || !profile.longitude) return false;
@@ -1573,7 +1595,9 @@ export const searchProfiles = async (req, res) => {
         isLiked: likedProfiles.includes(String(profile._id)),
         likeCount: profile.likes.length,
         religionId: religionData,
-        community: community ? { _id: community._id, name: community.name } : null,
+        community: community
+          ? { _id: community._id, name: community.name }
+          : null,
       };
     });
 
