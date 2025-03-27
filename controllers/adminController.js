@@ -14,6 +14,16 @@ import { sendNotification } from "../utils/notification.js";
 import Transaction from "../models/Transaction.js";
 import Notification from "../models/Notification.js";
 import fs from "fs";
+import jwt from "jsonwebtoken";
+import Admin from "../models/Admin.js";
+
+const generateJwtToken = (user) => {
+  return jwt.sign(
+    { id: user._id, mobileNumber: user.email, name: user.name },
+    process.env.JWT_SECRET,
+    { expiresIn: "730d" }
+  );
+};
 
 export const addBanner = async (req, res) => {
   try {
@@ -675,6 +685,16 @@ export const getSuccessStories = async (req, res) => {
 
     // Fetch feedbacks with pagination
     const successStory = await SuccessStory.find()
+      .populate({
+        path: "userId",
+        select:
+          "_id photos wallet mobileNumber countryCode address age annualIncome bio city firstName lastName userEmail",
+      })
+      .populate({
+        path: "partnerId",
+        select:
+          "_id photos wallet mobileNumber countryCode address age annualIncome bio city firstName lastName userEmail",
+      })
       .skip(skip)
       .limit(limitNumber)
       .sort({ createdAt: -1 });
@@ -1093,7 +1113,6 @@ export const getAllTransactionsInAdmin = async (req, res) => {
             { transactionId: { $regex: search, $options: "i" } },
             { status: { $regex: search, $options: "i" } },
             { type: { $regex: search, $options: "i" } },
-            { amount: { $regex: search, $options: "i" } },
           ],
         }
       : {};
@@ -1122,5 +1141,201 @@ export const getAllTransactionsInAdmin = async (req, res) => {
   } catch (error) {
     console.error("Error fetching transactions:", error);
     res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getMembershipStats = async (req, res) => {
+  try {
+    // Total users count
+    const totalUsers = await User.countDocuments();
+
+    if (totalUsers === 0) {
+      return res.status(200).json({
+        message: "No users found",
+        totalUsers: 0,
+        membershipPercentage: 0,
+        nonMembershipPercentage: 0,
+      });
+    }
+
+    // Users who have a valid membership
+    const members = await User.countDocuments({
+      "membership.endDate": { $gt: new Date() },
+    });
+
+    // Calculate percentages
+    const membershipPercentage = ((members / totalUsers) * 100).toFixed(2);
+    const nonMembershipPercentage = (100 - membershipPercentage).toFixed(2);
+
+    res.status(200).json({
+      message: "Membership statistics fetched successfully",
+      totalUsers,
+      membershipPercentage,
+      nonMembershipPercentage,
+    });
+  } catch (error) {
+    console.error("Error in getMembershipStats:", error);
+    res.status(500).json({ message: "Internal server error", status: false });
+  }
+};
+
+export const getRevenueStats = async (req, res) => {
+  try {
+    const currentYear = new Date().getFullYear();
+
+    // 🗓️ Monthly Revenue Aggregation
+    const monthlyRevenue = await Transaction.aggregate([
+      {
+        $match: {
+          type: "subscription",
+          status: "success",
+          createdAt: {
+            $gte: new Date(`${currentYear}-01-01`),
+            $lt: new Date(`${currentYear + 1}-01-01`),
+          },
+        },
+      },
+      {
+        $group: {
+          _id: { $month: "$createdAt" },
+          totalRevenue: { $sum: "$amount" },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // 🎯 Format Monthly Revenue Data
+    const monthlyData = Array.from({ length: 12 }, (_, i) => ({
+      month: new Date(0, i).toLocaleString("default", { month: "short" }),
+      revenue: 0,
+    }));
+
+    monthlyRevenue.forEach(({ _id, totalRevenue }) => {
+      monthlyData[_id - 1].revenue = totalRevenue;
+    });
+
+    // 📅 Yearly Revenue Aggregation
+    const yearlyRevenue = await Transaction.aggregate([
+      {
+        $match: { type: "subscription", status: "success" },
+      },
+      {
+        $group: {
+          _id: { $year: "$createdAt" },
+          totalRevenue: { $sum: "$amount" },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    res.status(200).json({
+      message: "Revenue stats fetched successfully",
+      status: true,
+      monthlyRevenue: monthlyData,
+      yearlyRevenue,
+    });
+  } catch (error) {
+    console.error("Error fetching revenue stats:", error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      status: false,
+      error: error.message,
+    });
+  }
+};
+
+export const getUserReligionStats = async (req, res) => {
+  try {
+    // Get total number of users
+    const totalUsers = await User.countDocuments();
+    if (totalUsers === 0) {
+      return res
+        .status(200)
+        .json({ message: "No users found", status: true, data: [] });
+    }
+
+    // Aggregate user count based on religionId
+    const religionStats = await User.aggregate([
+      { $match: { religionId: { $ne: null } } }, // Ignore users with no religionId
+      { $group: { _id: "$religionId", count: { $sum: 1 } } },
+    ]);
+
+    // Fetch religion names from Religion collection
+    const religionIds = religionStats.map((stat) => stat._id);
+    const religions = await Religion.find({ _id: { $in: religionIds } });
+
+    // Format response with percentages, remove unknowns & zero counts
+    const result = religionStats
+      .map((stat) => {
+        const religion = religions.find((r) => r._id.equals(stat._id));
+        if (!religion) return null; // Skip unknown religions
+
+        return {
+          religion: religion.religionName,
+          count: stat.count,
+          percentage: ((stat.count / totalUsers) * 100).toFixed(2) + "%",
+        };
+      })
+      .filter((stat) => stat !== null && stat.count > 0); // Remove null & zero count records
+
+    res.status(200).json({
+      message: "Religion-wise user distribution",
+      status: true,
+      data: result,
+    });
+  } catch (error) {
+    console.error("Error in getUserReligionStats:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const adminSignup = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    // Check if admin already exists
+    const existingAdmin = await Admin.findOne({ email });
+    if (existingAdmin) {
+      return res.status(400).json({ message: "Admin already exists" });
+    }
+
+    // Create new admin
+    const admin = await Admin.create({ name, email, password });
+
+    res.status(201).json({
+      message: "Admin registered successfully",
+      admin: { id: admin._id, name: admin.name, email: admin.email },
+      token: generateJwtToken(admin),
+    });
+  } catch (error) {
+    console.error("Admin Signup Error:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+export const adminLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Check if admin exists
+    const admin = await Admin.findOne({ email });
+    if (!admin) {
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
+
+    // Check password
+    const isMatch = await admin.comparePassword(password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
+
+    res.status(200).json({
+      message: "Admin logged in successfully",
+      admin: { id: admin._id, name: admin.name, email: admin.email },
+      token: generateJwtToken(admin),
+    });
+  } catch (error) {
+    console.error("Admin Login Error:", error);
+    res.status(500).json({ message: "Server Error" });
   }
 };

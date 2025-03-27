@@ -23,7 +23,7 @@ const generateJwtToken = (user) => {
   return jwt.sign(
     { id: user._id, mobileNumber: user.mobileNumber, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn: "730d" }
   );
 };
 const generateFourDigitOtp = () => {
@@ -363,7 +363,7 @@ export const login = async (req, res) => {
 
     // Find user by email or mobile number
     let user = await User.findOne({
-      $or: [{ email: mobileOrEmail }, { mobileNumber: mobileOrEmail }],
+      $or: [{ userEmail: mobileOrEmail }, { mobileNumber: mobileOrEmail }],
     });
 
     if (!user) {

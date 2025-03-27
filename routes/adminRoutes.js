@@ -1,6 +1,6 @@
 import express from "express";
 import { uploadBanner } from "../middleware/uploadMiddleware.js";
-import { addBanner, getBanners, policyUpdate, getPolicy, addUpdateMembership, getAllMembership, addReligion, updateReligion, getReligions, getCommunitiesByReligion, addReferral, getAllUsers, addOrUpdateContact, addSuccessStory, updateUserVerification, getUserIdInAdmin, dashboardData, getAllFeedbackInAdmin, getMembershipInAdmin, getAllLikedProfilesInAdmin, updateBanner, deleteBanner, getBannerById, getReferral, getMembershipById, getContacts, getReligionById, getSuccessStories, getSuccessStoryById, updateSuccessStory, getMaleFemaleUsers, deleteSuccessStory, getAllTransactionsInAdmin } from "../controllers/adminController.js";
+import { addBanner, getBanners, policyUpdate, getPolicy, addUpdateMembership, getAllMembership, addReligion, updateReligion, getReligions, getCommunitiesByReligion, addReferral, getAllUsers, addOrUpdateContact, addSuccessStory, updateUserVerification, getUserIdInAdmin, dashboardData, getAllFeedbackInAdmin, getMembershipInAdmin, getAllLikedProfilesInAdmin, updateBanner, deleteBanner, getBannerById, getReferral, getMembershipById, getContacts, getReligionById, getSuccessStories, getSuccessStoryById, updateSuccessStory, getMaleFemaleUsers, deleteSuccessStory, getAllTransactionsInAdmin, getMembershipStats, getRevenueStats, getUserReligionStats, adminSignup, adminLogin } from "../controllers/adminController.js";
 
 import { uploadProfile } from "../middleware/uploadMiddleware.js";
 
@@ -73,6 +73,15 @@ router.post("/deleteSuccessStory", deleteSuccessStory);
 
 router.get("/getAllTransactionsInAdmin", getAllTransactionsInAdmin);
 
+router.get("/getMembershipStats", getMembershipStats);
+
+router.get("/getRevenueStats", getRevenueStats);
+
+router.get("/getUserReligionStats", getUserReligionStats);
+
+router.post("/adminSignup", adminSignup);
+
+router.post("/adminLogin", adminLogin);
 
 
 export default router;
