@@ -250,6 +250,27 @@ export const completeRegistration = async (req, res) => {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
+    const membershipID = await Membership.findOne({ planType: "monthly" });
+
+    // Get total user count
+    const userCount = await User.countDocuments();
+
+    let membership = null;
+
+    // If the user count is less than 1000, give free monthly membership
+    if (userCount < 1000) {
+      const startDate = new Date();
+      let endDate = new Date(startDate);
+      endDate.setMonth(endDate.getMonth() + 1);
+
+      membership = {
+        planType: "monthly",
+        startDate,
+        endDate,
+        membershipId: membershipID._id,
+      };
+    }
+
     // Update user field
     Object.assign(user, {
       profileFor,
@@ -285,6 +306,7 @@ export const completeRegistration = async (req, res) => {
       referredBy: referrer ? referrer._id : null,
       religionId: religionId,
       communityId: communityId,
+      membership,
     });
 
     const newUser = await user.save();
