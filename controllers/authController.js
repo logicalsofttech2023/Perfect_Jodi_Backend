@@ -1730,9 +1730,9 @@ export const saveRecentView = async (req, res) => {
     }
 
     // Check if the same view already exists
-    const existingView = await RecentView.findOne({ userId, profileId });
+    const existingView = await RecentView.findOne({ userId, profiles: profileId });
     if (!existingView) {
-      await RecentView.create({ userId, profileId });
+      await RecentView.create({ userId, profiles: profileId });
     }
 
     res.status(200).json({ message: "Profile viewed successfully", status: true });
@@ -1757,7 +1757,7 @@ export const getRecentViews = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(10)
       .populate({
-        path: "profileId",
+        path: "profiles",
         select: "-otp -otpExpiresAt -password",
         populate: {
           path: "religionId",
@@ -1767,7 +1767,7 @@ export const getRecentViews = async (req, res) => {
       .lean();
 
     const updatedRecentViews = recentViews.map((view) => {
-      const profile = view.profileId;
+      const profile = view.profiles;
       if (!profile) return view;
 
       const community = profile.religionId?.communities.find(
@@ -1781,7 +1781,7 @@ export const getRecentViews = async (req, res) => {
 
       return {
         ...view,
-        profileId: {
+        profiles: {
           ...profile,
           isLiked: likedProfiles.includes(String(profile._id)),
           likeCount: profile.likes.length,
