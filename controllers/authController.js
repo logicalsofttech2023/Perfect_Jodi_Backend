@@ -19,6 +19,7 @@ import geolib from "geolib";
 import { addNotification } from "../utils/AddNotification.js";
 import Notification from "../models/Notification.js";
 import RecentView from "../models/RecentView.js";
+import Referral from "../models/Referral.js";
 
 const generateJwtToken = (user) => {
   return jwt.sign(
@@ -208,6 +209,13 @@ export const completeRegistration = async (req, res) => {
         .json({ message: "Invalid community ID", status: false });
     }
 
+    const referAmount = await Referral.findOne();
+    if (!referAmount) {
+      return res
+        .status(400)
+        .json({ message: "Referral amount not set", status: false });
+    }
+
     // Inside completeRegistration function
     const referralId = generateReferralId(mobileNumber);
 
@@ -220,6 +228,10 @@ export const completeRegistration = async (req, res) => {
           .status(400)
           .json({ message: "Invalid referral code", status: false });
       }
+
+      // Add referral amount to referrer's wallet
+      referrer.wallet += referAmount.referAmount;
+      await referrer.save();
     }
     const photos = req.files
       ? req.files.map((file) => file.path.split(path.sep).join("/"))
@@ -1726,16 +1738,23 @@ export const saveRecentView = async (req, res) => {
     const userId = req.user.id;
 
     if (!profileId) {
-      return res.status(400).json({ message: "Profile ID is required", status: false });
+      return res
+        .status(400)
+        .json({ message: "Profile ID is required", status: false });
     }
 
     // Check if the same view already exists
-    const existingView = await RecentView.findOne({ userId, profiles: profileId });
+    const existingView = await RecentView.findOne({
+      userId,
+      profiles: profileId,
+    });
     if (!existingView) {
       await RecentView.create({ userId, profiles: profileId });
     }
 
-    res.status(200).json({ message: "Profile viewed successfully", status: true });
+    res
+      .status(200)
+      .json({ message: "Profile viewed successfully", status: true });
   } catch (error) {
     console.error("Error in saveRecentView:", error);
     res.status(500).json({ message: "Server Error", status: false });
@@ -1786,7 +1805,9 @@ export const getRecentViews = async (req, res) => {
           isLiked: likedProfiles.includes(String(profile._id)),
           likeCount: profile.likes.length,
           religionId: religionData,
-          community: community ? { _id: community._id, name: community.name } : null,
+          community: community
+            ? { _id: community._id, name: community.name }
+            : null,
         },
       };
     });
@@ -1797,4 +1818,3 @@ export const getRecentViews = async (req, res) => {
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
-
