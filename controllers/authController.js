@@ -1755,7 +1755,7 @@ export const getRecentViews = async (req, res) => {
 
     const recentViews = await RecentView.find({ userId })
       .sort({ createdAt: -1 })
-      .limit(3)
+      .limit(10)
       .populate({
         path: "profileId",
         select: "-otp -otpExpiresAt -password",
