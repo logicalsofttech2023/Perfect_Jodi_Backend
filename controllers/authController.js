@@ -18,6 +18,7 @@ import SuccessStory from "../models/SuccessStory.js";
 import geolib from "geolib";
 import { addNotification } from "../utils/AddNotification.js";
 import Notification from "../models/Notification.js";
+import RecentView from "../models/RecentView.js";
 
 const generateJwtToken = (user) => {
   return jwt.sign(
@@ -1718,3 +1719,82 @@ export const getAllNotificationsById = async (req, res) => {
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
+
+export const saveRecentView = async (req, res) => {
+  try {
+    const { profileId } = req.body;
+    const userId = req.user.id;
+
+    if (!profileId) {
+      return res.status(400).json({ message: "Profile ID is required", status: false });
+    }
+
+    // Check if the same view already exists
+    const existingView = await RecentView.findOne({ userId, profileId });
+    if (!existingView) {
+      await RecentView.create({ userId, profileId });
+    }
+
+    res.status(200).json({ message: "Profile viewed successfully", status: true });
+  } catch (error) {
+    console.error("Error in saveRecentView:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getRecentViews = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const loggedInUser = await User.findById(userId).select("likes");
+    if (!loggedInUser) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    const likedProfiles = loggedInUser.likes.map((id) => String(id));
+
+    const recentViews = await RecentView.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(3)
+      .populate({
+        path: "profileId",
+        select: "-otp -otpExpiresAt -password",
+        populate: {
+          path: "religionId",
+          select: "religionName communities",
+        },
+      })
+      .lean();
+
+    const updatedRecentViews = recentViews.map((view) => {
+      const profile = view.profileId;
+      if (!profile) return view;
+
+      const community = profile.religionId?.communities.find(
+        (c) => c._id.toString() === profile.communityId?.toString()
+      );
+
+      const religionData = {
+        _id: profile.religionId?._id,
+        religionName: profile.religionId?.religionName,
+      };
+
+      return {
+        ...view,
+        profileId: {
+          ...profile,
+          isLiked: likedProfiles.includes(String(profile._id)),
+          likeCount: profile.likes.length,
+          religionId: religionData,
+          community: community ? { _id: community._id, name: community.name } : null,
+        },
+      };
+    });
+
+    res.status(200).json({ status: true, recentViews: updatedRecentViews });
+  } catch (error) {
+    console.error("Error in getRecentViews:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+

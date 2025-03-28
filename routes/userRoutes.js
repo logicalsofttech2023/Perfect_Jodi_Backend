@@ -31,6 +31,8 @@ import {
   getContacts,
   getSuccessStories,
   getAllNotificationsById,
+  saveRecentView,
+  getRecentViews
 } from "../controllers/authController.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 import { uploadProfile } from "../middleware/uploadMiddleware.js";
@@ -94,6 +96,8 @@ router.get("/getFeedbacks", getFeedbacks);
 router.get("/getContacts", getContacts);
 router.get("/getSuccessStories", getSuccessStories);
 router.get("/getAllNotificationsById", authMiddleware, getAllNotificationsById);
+router.post("/saveRecentView", authMiddleware, saveRecentView);
+router.get("/getRecentViews", authMiddleware, getRecentViews);
 
 
 
