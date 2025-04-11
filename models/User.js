@@ -65,6 +65,8 @@ const userSchema = new mongoose.Schema(
     fcmToken: { type: String },
     religionId: { type: mongoose.Schema.Types.ObjectId, ref: "Religion" },
     communityId: { type: mongoose.Schema.Types.ObjectId },
+    chatImage: { type: String },
+    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   },
   { timestamps: true }
 );

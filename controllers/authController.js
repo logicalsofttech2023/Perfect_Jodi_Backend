@@ -1003,7 +1003,7 @@ export const getAllProfiles = async (req, res) => {
     const userId = req.user.id;
 
     const loggedInUser = await User.findById(userId).select(
-      "religionId likes gender"
+      "religionId likes gender blockedUsers"
     );
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found", status: false });
@@ -1012,13 +1012,21 @@ export const getAllProfiles = async (req, res) => {
     const userReligion = loggedInUser.religionId;
     const likedProfiles = loggedInUser.likes.map((id) => String(id));
     const genderPreference = loggedInUser.gender === "Male" ? "Female" : "Male";
+    const blockedByUser = loggedInUser.blockedUsers.map((id) => id.toString());
+
+    // Get users who have blocked the logged-in user
+    const blockedYou = await User.find({ blockedUsers: userId }).select("_id");
+    const blockedYouIds = blockedYou.map((u) => u._id.toString());
+
+    const excludedIds = [...blockedByUser, ...blockedYouIds];
 
     let profiles = await User.find({
       isVerified: true,
       adminVerify: true,
-      _id: { $ne: userId },
+      _id: { $ne: userId, $nin: excludedIds },
       gender: genderPreference,
       religionId: userReligion,
+      
     })
       .populate({
         path: "religionId",
@@ -1070,7 +1078,7 @@ export const getAllNearProfiles = async (req, res) => {
     }
 
     const loggedInUser = await User.findById(userId).select(
-      "religionId likes gender"
+      "religionId likes gender blockedUsers"
     );
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found", status: false });
@@ -1079,11 +1087,18 @@ export const getAllNearProfiles = async (req, res) => {
     const userReligion = loggedInUser.religionId;
     const likedProfiles = loggedInUser.likes.map((id) => String(id));
     const genderPreference = loggedInUser.gender === "Male" ? "Female" : "Male";
+    const blockedByUser = loggedInUser.blockedUsers.map((id) => id.toString());
+
+    // Find users who have blocked the current user
+    const blockedYou = await User.find({ blockedUsers: userId }).select("_id");
+    const blockedYouIds = blockedYou.map((u) => u._id.toString());
+
+    const excludedIds = [...blockedByUser, ...blockedYouIds];
 
     let profiles = await User.find({
       isVerified: true,
       adminVerify: true,
-      _id: { $ne: userId },
+      _id: { $ne: userId, $nin: excludedIds },
       gender: genderPreference,
       religionId: userReligion,
     })
@@ -1413,122 +1428,19 @@ export const getAllCommunitiesByReligion = async (req, res) => {
   }
 };
 
-// export const searchProfiles = async (req, res) => {
-//   try {
-//     console.log("Incoming Request Query:", req.query);
-//     const userId = req.user.id;
-//     const { search, minAge, maxAge, communityId } = req.query;
-
-//     if (!search && !minAge && !maxAge) {
-//       console.log("No search parameters provided.");
-//       return res.status(200).json({
-//         status: true,
-//         profiles: [],
-//       });
-//     }
-
-//     const loggedInUser = await User.findById(userId).select(
-//       "religionId likes gender"
-//     );
-//     if (!loggedInUser) {
-//       console.log("User not found with ID:", userId);
-//       return res.status(404).json({ message: "User not found", status: false });
-//     }
-
-//     const likedProfiles = loggedInUser.likes.map((id) => String(id));
-//     const userReligion = loggedInUser.religionId;
-//     const genderPreference = loggedInUser.gender === "Male" ? "Female" : "Male";
-
-//     console.log("Logged In User Details:", { userReligion, genderPreference });
-
-//     let communityFilter = {};
-//     if (mongoose.Types.ObjectId.isValid(communityId)) {
-//       communityFilter = {
-//         communityId: new mongoose.Types.ObjectId(communityId),
-//       };
-//     }
-
-//     const orConditions = [];
-//     if (search) {
-//       orConditions.push(
-//         { firstName: { $regex: search, $options: "i" } },
-//         { lastName: { $regex: search, $options: "i" } },
-//         { city: { $regex: search, $options: "i" } },
-//         { mobileNumber: { $regex: search, $options: "i" } },
-//         { userEmail: { $regex: search, $options: "i" } }
-//       );
-//     }
-
-//     const filters = {
-//       isVerified: true,
-//       adminVerify: true,
-//       _id: { $ne: userId },
-//       gender: genderPreference,
-//       religionId: userReligion,
-//       ...(Object.keys(communityFilter).length > 0 && communityFilter),
-//       ...(orConditions.length > 0 && { $or: orConditions }),
-//     };
-
-//     // Apply age filter only if minAge and maxAge are provided
-//     if (minAge && maxAge) {
-//       filters.$expr = {
-//         $and: [
-//           { $gte: [{ $toInt: "$age" }, parseInt(minAge)] },
-//           { $lte: [{ $toInt: "$age" }, parseInt(maxAge)] },
-//         ],
-//       };
-//     }
-
-//     console.log("Filters Applied:", JSON.stringify(filters, null, 2));
-
-//     let profiles = await User.find(filters)
-//       .populate({
-//         path: "religionId",
-//         select: "religionName communities",
-//       })
-//       .select("-otp -otpExpiresAt -password")
-//       .lean();
-
-//     console.log("Profiles Found:", profiles.length);
-
-//     profiles = profiles.map((profile) => {
-//       const community = profile.religionId?.communities.find(
-//         (c) => c._id.toString() === profile.communityId?.toString()
-//       );
-
-//       const religionData = {
-//         _id: profile.religionId?._id,
-//         religionName: profile.religionId?.religionName,
-//       };
-
-//       return {
-//         ...profile,
-//         isLiked: likedProfiles.includes(String(profile._id)),
-//         likeCount: profile.likes.length,
-//         religionId: religionData,
-//         community: community
-//           ? { _id: community._id, name: community.name }
-//           : null,
-//       };
-//     });
-
-//     console.log("Final Profiles Data:", JSON.stringify(profiles, null, 2));
-
-//     res.status(200).json({
-//       status: true,
-//       profiles,
-//     });
-//   } catch (error) {
-//     console.error("Error in searchProfiles:", error);
-//     res.status(500).json({ message: "Server Error", status: false });
-//   }
-// };
 
 export const searchProfiles = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { search, minAge, maxAge, communityId, latitude, longitude, radius } =
-      req.query;
+    const {
+      search,
+      minAge,
+      maxAge,
+      communityId,
+      latitude,
+      longitude,
+      radius,
+    } = req.query;
 
     if (
       !search &&
@@ -1546,20 +1458,28 @@ export const searchProfiles = async (req, res) => {
     }
 
     const loggedInUser = await User.findById(userId).select(
-      "religionId likes gender"
+      "religionId likes gender blockedUsers"
     );
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found", status: false });
     }
 
     const likedProfiles = loggedInUser.likes.map((id) => String(id));
+    const blockedByUser = loggedInUser.blockedUsers.map((id) => id.toString());
+
+    // Users who have blocked the logged-in user
+    const blockedYou = await User.find({ blockedUsers: userId }).select("_id");
+    const blockedYouIds = blockedYou.map((u) => u._id.toString());
+
+    const excludedIds = [...blockedByUser, ...blockedYouIds];
+
     const userReligion = loggedInUser.religionId;
     const genderPreference = loggedInUser.gender === "Male" ? "Female" : "Male";
 
     let filters = {
       isVerified: true,
       adminVerify: true,
-      _id: { $ne: userId },
+      _id: { $ne: userId, $nin: excludedIds },
       gender: genderPreference,
       religionId: userReligion,
     };
@@ -1585,12 +1505,12 @@ export const searchProfiles = async (req, res) => {
       filters.$expr = { $and: [] };
       if (minAge) {
         filters.$expr.$and.push({
-          $gte: [{ $toInt: "$age" }, parseInt(minAge)],
+          $gte: [{ $toInt: "$age" }, parseInt(minAge) ],
         });
       }
       if (maxAge) {
         filters.$expr.$and.push({
-          $lte: [{ $toInt: "$age" }, parseInt(maxAge)],
+          $lte: [{ $toInt: "$age" }, parseInt(maxAge) ],
         });
       }
     }
@@ -1642,6 +1562,7 @@ export const searchProfiles = async (req, res) => {
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
+
 
 export const addFeedback = async (req, res) => {
   try {
@@ -1765,12 +1686,19 @@ export const getRecentViews = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const loggedInUser = await User.findById(userId).select("likes");
+    const loggedInUser = await User.findById(userId).select("likes blockedUsers");
     if (!loggedInUser) {
       return res.status(404).json({ message: "User not found", status: false });
     }
 
     const likedProfiles = loggedInUser.likes.map((id) => String(id));
+    const blockedByUser = loggedInUser.blockedUsers.map((id) => id.toString());
+
+    // Users who have blocked the logged-in user
+    const blockedYou = await User.find({ blockedUsers: userId }).select("_id");
+    const blockedYouIds = blockedYou.map((u) => u._id.toString());
+
+    const excludedIds = [...blockedByUser, ...blockedYouIds];
 
     const recentViews = await RecentView.find({ userId })
       .sort({ createdAt: -1 })
@@ -1785,10 +1713,150 @@ export const getRecentViews = async (req, res) => {
       })
       .lean();
 
-    const updatedRecentViews = recentViews.map((view) => {
-      const profile = view.profiles;
-      if (!profile) return view;
+    const updatedRecentViews = recentViews
+      .filter((view) => {
+        const profile = view.profiles;
+        if (!profile) return false;
+        return !excludedIds.includes(profile._id.toString());
+      })
+      .map((view) => {
+        const profile = view.profiles;
 
+        const community = profile.religionId?.communities.find(
+          (c) => c._id.toString() === profile.communityId?.toString()
+        );
+
+        const religionData = {
+          _id: profile.religionId?._id,
+          religionName: profile.religionId?.religionName,
+        };
+
+        return {
+          ...view,
+          profiles: {
+            ...profile,
+            isLiked: likedProfiles.includes(String(profile._id)),
+            likeCount: profile.likes.length,
+            religionId: religionData,
+            community: community
+              ? { _id: community._id, name: community.name }
+              : null,
+          },
+        };
+      });
+
+    res.status(200).json({ status: true, recentViews: updatedRecentViews });
+  } catch (error) {
+    console.error("Error in getRecentViews:", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const chatImageUpload = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded", status: false });
+    }    
+
+    const chatImage = req.file.path.replace(/\\/g, "/");    
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req?.user?.id,
+      { chatImage },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    res.status(200).json({
+      message: "Image added successfully",
+      status: true,
+      chatImage: updatedUser.chatImage,
+    });
+  } catch (error) {
+    console.error("Server error", error);
+    res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const blockUser = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { profileId } = req.body;
+
+    if (!profileId) {
+      return res
+        .status(400)
+        .json({ message: "Profile ID is required", status: false });
+    }
+
+    if (userId === profileId) {
+      return res
+        .status(400)
+        .json({ message: "You cannot block yourself", status: false });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    // Ensure blockedUsers is an array
+    if (!Array.isArray(user.blockedUsers)) {
+      user.blockedUsers = [];
+    }
+
+    const profile = await User.findById(profileId);
+    if (!profile) {
+      return res.status(404).json({ message: "Profile not found", status: false });
+    }
+
+    const blockIndex = user.blockedUsers.indexOf(profileId);
+    let message = "";
+
+    if (blockIndex === -1) {
+      // Block the user
+      user.blockedUsers.push(profileId);
+      message = "User blocked successfully";
+    } else {
+      // Unblock the user
+      user.blockedUsers.splice(blockIndex, 1);
+      message = "User unblocked successfully";
+    }
+
+    await user.save();
+
+    return res.status(200).json({
+      message,
+      status: true,
+      blockedCount: user.blockedUsers.length,
+    });
+  } catch (error) {
+    console.error("Error in blockUser:", error);
+    return res.status(500).json({ message: "Server Error", status: false });
+  }
+};
+
+export const getAllBlockedProfiles = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await User.findById(userId).populate({
+      path: "blockedUsers",
+      populate: {
+        path: "religionId",
+        select: "religionName communities",
+      },
+      select: "-password -otp -otpExpiresAt",
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found", status: false });
+    }
+
+    const blockedProfiles = user.blockedUsers.map((profile) => {
       const community = profile.religionId?.communities.find(
         (c) => c._id.toString() === profile.communityId?.toString()
       );
@@ -1799,22 +1867,25 @@ export const getRecentViews = async (req, res) => {
       };
 
       return {
-        ...view,
-        profiles: {
-          ...profile,
-          isLiked: likedProfiles.includes(String(profile._id)),
-          likeCount: profile.likes.length,
-          religionId: religionData,
-          community: community
-            ? { _id: community._id, name: community.name }
-            : null,
-        },
+        ...profile.toObject(),
+        religionId: religionData,
+        community: community
+          ? { _id: community._id, name: community.name }
+          : null,
+        blockCount: profile.blockedUsers.length,
       };
     });
 
-    res.status(200).json({ status: true, recentViews: updatedRecentViews });
+    res.status(200).json({
+      message: "Blocked profiles fetched successfully",
+      status: true,
+      blockedProfiles,
+    });
   } catch (error) {
-    console.error("Error in getRecentViews:", error);
+    console.error("Error in getAllBlockedProfiles:", error);
     res.status(500).json({ message: "Server Error", status: false });
   }
 };
+
+
+

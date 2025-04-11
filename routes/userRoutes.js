@@ -32,7 +32,10 @@ import {
   getSuccessStories,
   getAllNotificationsById,
   saveRecentView,
-  getRecentViews
+  getRecentViews,
+  chatImageUpload,
+  blockUser,
+  getAllBlockedProfiles,
 } from "../controllers/authController.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 import { uploadProfile } from "../middleware/uploadMiddleware.js";
@@ -98,7 +101,14 @@ router.get("/getSuccessStories", getSuccessStories);
 router.get("/getAllNotificationsById", authMiddleware, getAllNotificationsById);
 router.post("/saveRecentView", authMiddleware, saveRecentView);
 router.get("/getRecentViews", authMiddleware, getRecentViews);
+router.post(
+  "/chatImageUpload",
+  authMiddleware,
+  uploadProfile.single("chatImage"),
+  chatImageUpload
+);
 
-
+router.post("/blockUser", authMiddleware, blockUser);
+router.get("/getAllBlockedProfiles", authMiddleware, getAllBlockedProfiles);
 
 export default router;

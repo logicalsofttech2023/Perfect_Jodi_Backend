@@ -19,4 +19,3 @@ export const sendNotification = async (token, title, body) => {
       throw error;
     }
 };
-  
