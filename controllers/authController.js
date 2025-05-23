@@ -347,6 +347,7 @@ export const resetPassword = async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
 
+    
     // Validate inputs
     if (!userId || !oldPassword || !newPassword) {
       return res
